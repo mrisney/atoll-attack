@@ -4,14 +4,15 @@ import 'package:flame/components.dart'; // for Vector2
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
 
-/// A GPU-accelerated island renderer component using a fragment shader.
 class IslandComponent extends PositionComponent {
-  double radius;
+  double
+      radius; // Not used for shader rendering, keep for fallback and gameplay
   double amplitude;
   double wavelength;
   double bias;
   int seed;
   Vector2 gameSize;
+  double islandRadius; // NEW: value between 0.4 and 1.2
 
   // Shader resources
   ui.FragmentProgram? fragmentProgram;
@@ -28,6 +29,7 @@ class IslandComponent extends PositionComponent {
     required this.bias,
     required this.seed,
     required this.gameSize,
+    required this.islandRadius, // NEW
   }) {
     anchor = Anchor.center;
     size = gameSize;
@@ -44,7 +46,7 @@ class IslandComponent extends PositionComponent {
   Future<void> _loadShader() async {
     try {
       fragmentProgram =
-          await ui.FragmentProgram.fromAsset('shaders/noisy_hex.frag');
+          await ui.FragmentProgram.fromAsset('shaders/island_water.frag');
       shader = fragmentProgram!.fragmentShader();
       shaderLoaded = true;
     } catch (e) {
@@ -53,17 +55,18 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Update shader and fallback noise parameters
   void updateParams({
     required double amplitude,
     required double wavelength,
     required double bias,
     required int seed,
+    required double islandRadius, // NEW
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
     this.bias = bias;
     this.seed = seed;
+    this.islandRadius = islandRadius;
     noise = fn.SimplexNoise(seed: seed, frequency: wavelength * 0.01);
   }
 
@@ -77,17 +80,16 @@ class IslandComponent extends PositionComponent {
   }
 
   void _renderShaderIsland(Canvas canvas) {
-    // Pass uniforms to shader: amplitude, wavelength, bias, seed, resolution x/y
     shader!
       ..setFloat(0, amplitude)
       ..setFloat(1, wavelength)
       ..setFloat(2, bias)
       ..setFloat(3, seed.toDouble())
       ..setFloat(4, gameSize.x)
-      ..setFloat(5, gameSize.y);
+      ..setFloat(5, gameSize.y)
+      ..setFloat(6, islandRadius); // NEW
 
     final paint = Paint()..shader = shader;
-    // Draw a rectangle at (0,0) covering the full render area
     canvas.drawRect(
       Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
       paint,
@@ -95,14 +97,14 @@ class IslandComponent extends PositionComponent {
   }
 
   void _renderFallback(Canvas canvas) {
-    final maxRadius = gameSize.x * 0.4;
-    // Water background
+    final maxRadius = gameSize.x *
+        0.4 *
+        islandRadius /
+        0.8; // optional: scale fallback island
     canvas.drawRect(
       Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
       Paint()..color = const Color(0xFF1E88E5),
     );
-
-    // Irregular island polygon
     final islandPaint = Paint()..color = const Color(0xFF4CAF50);
     final center = Offset(gameSize.x / 2, gameSize.y / 2);
     for (int angle = 0; angle < 360; angle += 10) {

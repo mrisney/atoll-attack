@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flame/components.dart'; // for Vector2
 import 'island_component.dart';
 
-/// The main Atoll Wars game using a GPU-accelerated island renderer.
 class IslandGame extends FlameGame with HasCollisionDetection {
   double amplitude;
   double wavelength;
   double bias;
   int seed;
   Vector2 gameSize;
-  late IslandComponent _island;
+  double islandRadius; // NEW
 
+  late IslandComponent _island;
   bool _isLoaded = false;
 
   IslandGame({
@@ -20,6 +20,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required this.bias,
     required this.seed,
     required this.gameSize,
+    required this.islandRadius, // NEW
   });
 
   @override
@@ -35,6 +36,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
       bias: bias,
       seed: seed,
       gameSize: gameSize,
+      islandRadius: islandRadius, // NEW
     );
     _island.position = gameSize / 2;
     add(_island);
@@ -48,17 +50,20 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required double wavelength,
     required double bias,
     required int seed,
+    required double islandRadius, // NEW
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
     this.bias = bias;
     this.seed = seed;
+    this.islandRadius = islandRadius;
     if (_isLoaded && _island.isMounted) {
       _island.updateParams(
         amplitude: amplitude,
         wavelength: wavelength,
         bias: bias,
         seed: seed,
+        islandRadius: islandRadius, // NEW
       );
     }
   }
@@ -76,6 +81,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         wavelength: wavelength,
         bias: bias,
         seed: seed,
+        islandRadius: islandRadius, // NEW
       );
     }
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flame/game.dart';
-import 'package:flame/components.dart'; // for Vector2
+import 'package:flame/components.dart';
 import 'island_game.dart';
 
 void main() {
@@ -16,9 +16,11 @@ class IslandApp extends StatefulWidget {
 
 class _IslandAppState extends State<IslandApp>
     with SingleTickerProviderStateMixin {
-  double amplitude = 1.0;
-  double wavelength = 0.35;
-  double bias = 0.0;
+  // Updated defaults for visually appealing islands
+  double amplitude = 1.6;
+  double wavelength = 0.25;
+  double bias = -0.7;
+  double islandRadius = 0.8;
   int seed = 42;
 
   bool _isPanelVisible = true;
@@ -57,6 +59,7 @@ class _IslandAppState extends State<IslandApp>
       wavelength: wavelength,
       bias: bias,
       seed: seed,
+      islandRadius: islandRadius,
     );
   }
 
@@ -74,7 +77,7 @@ class _IslandAppState extends State<IslandApp>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Noisy Hex Island Generator',
+      title: 'Island Generator',
       home: Scaffold(
         backgroundColor: Colors.black,
         body: LayoutBuilder(
@@ -83,7 +86,6 @@ class _IslandAppState extends State<IslandApp>
             final logicalHeight = constraints.maxHeight;
             final logicalSize = Vector2(logicalWidth, logicalHeight);
 
-            // Only create game once or if size changes
             if (game == null ||
                 lastLogicalSize == null ||
                 lastLogicalSize!.x != logicalWidth ||
@@ -94,6 +96,7 @@ class _IslandAppState extends State<IslandApp>
                 bias: bias,
                 seed: seed,
                 gameSize: logicalSize,
+                islandRadius: islandRadius,
               );
               lastLogicalSize = logicalSize;
             }
@@ -104,19 +107,19 @@ class _IslandAppState extends State<IslandApp>
 
                 // Toggle button for panel
                 Positioned(
-                  top: 50,
-                  right: 10,
+                  top: 30,
+                  right: 16,
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(25),
                       onTap: _togglePanel,
                       child: Container(
-                        width: 50,
-                        height: 50,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(25),
+                          borderRadius: BorderRadius.circular(22),
                           border:
                               Border.all(color: Colors.white.withOpacity(0.3)),
                         ),
@@ -130,61 +133,15 @@ class _IslandAppState extends State<IslandApp>
                   ),
                 ),
 
-                // Debug info in top left corner
-                Positioned(
-                  top: 50,
-                  left: 10,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Fragment Shader Island',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'A: ${amplitude.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        ),
-                        Text(
-                          'W: ${wavelength.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        ),
-                        Text(
-                          'B: ${bias.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        ),
-                        Text(
-                          'S: $seed',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Collapsible control panel
+                // Collapsible control panel (smaller, bottom-centered)
                 if (_isPanelVisible)
                   AnimatedBuilder(
                     animation: _slideAnimation,
                     builder: (context, child) {
                       return Positioned(
-                        left: 10,
-                        right: 10,
-                        bottom: -250 + (250 * _slideAnimation.value),
+                        left: 24,
+                        right: 24,
+                        bottom: -180 + (180 * _slideAnimation.value),
                         child: _buildControlPanel(),
                       );
                     },
@@ -199,22 +156,22 @@ class _IslandAppState extends State<IslandApp>
 
   Widget _buildControlPanel() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.95),
+        color: Colors.black.withOpacity(0.96),
         borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
         ),
         border: Border.all(
-          color: Colors.blue.withOpacity(0.5),
-          width: 2,
+          color: Colors.blue.withOpacity(0.4),
+          width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 8,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
@@ -223,97 +180,96 @@ class _IslandAppState extends State<IslandApp>
         children: [
           // Panel handle
           Container(
-            width: 40,
+            width: 32,
             height: 4,
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withOpacity(0.4),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Controls
-          _buildSlider('Amplitude', amplitude, 0.0, 2.0, (v) {
+          _buildSlider('Amplitude', amplitude, 1.0, 2.0, (v) {
             setState(() {
               amplitude = v;
               _updateGame();
             });
           }),
-          _buildSlider('Wavelength', wavelength, 0.1, 2.0, (v) {
+          _buildSlider('Wavelength', wavelength, 0.15, 0.7, (v) {
             setState(() {
               wavelength = v;
               _updateGame();
             });
           }),
-          _buildSlider('Bias', bias, -1.0, 1.0, (v) {
+          _buildSlider('Bias', bias, -1.0, 0.2, (v) {
             setState(() {
               bias = v;
               _updateGame();
             });
           }),
-          const SizedBox(height: 20),
+          _buildSlider('Island Size', islandRadius, 0.4, 1.2, (v) {
+            setState(() {
+              islandRadius = v;
+              _updateGame();
+            });
+          }),
+          const SizedBox(height: 10),
 
-          // Seed controls
+          // Seed controls (in a more compact layout)
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
+              Text('Seed: $seed',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  )),
+              Row(
                 children: [
-                  Text('Seed: $seed',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      )),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.refresh, size: 20),
-                        label: const Text('New Island'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            seed =
-                                DateTime.now().millisecondsSinceEpoch % 100000;
-                            _updateGame();
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.shuffle, size: 20),
-                        label: const Text('Random'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            final ms = DateTime.now().millisecondsSinceEpoch;
-                            amplitude = 0.5 + (ms % 1000) / 1000.0 * 1.5;
-                            wavelength = 0.2 + (ms % 1500) / 1500.0 * 1.5;
-                            bias = -0.5 + (ms % 2000) / 2000.0;
-                            seed = ms % 100000;
-                            _updateGame();
-                          });
-                        },
-                      ),
-                    ],
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        seed = DateTime.now().millisecondsSinceEpoch % 100000;
+                        _updateGame();
+                      });
+                    },
+                    child: const Icon(Icons.refresh, size: 18),
+                  ),
+                  const SizedBox(width: 6),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        final ms = DateTime.now().millisecondsSinceEpoch;
+                        amplitude = 1.0 + (ms % 1000) / 1000.0 * 1.0;
+                        wavelength = 0.15 + (ms % 700) / 700.0 * 0.55;
+                        bias = -1.0 + (ms % 1200) / 1200.0 * 1.2;
+                        islandRadius = 0.5 + (ms % 700) / 700.0 * 0.7;
+                        seed = ms % 100000;
+                        _updateGame();
+                      });
+                    },
+                    child: const Icon(Icons.shuffle, size: 18),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 10),
         ],
       ),
     );
@@ -322,7 +278,7 @@ class _IslandAppState extends State<IslandApp>
   Widget _buildSlider(String label, double value, double min, double max,
       ValueChanged<double> onChanged) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -333,23 +289,22 @@ class _IslandAppState extends State<IslandApp>
                 label,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.blue.withOpacity(0.5)),
+                  color: Colors.blue.withOpacity(0.28),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: Colors.blue.withOpacity(0.38)),
                 ),
                 child: Text(
                   value.toStringAsFixed(2),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                     fontFamily: 'monospace',
                   ),
@@ -357,15 +312,14 @@ class _IslandAppState extends State<IslandApp>
               ),
             ],
           ),
-          const SizedBox(height: 8),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: Colors.blue.shade400,
-              inactiveTrackColor: Colors.blue.withOpacity(0.3),
+              inactiveTrackColor: Colors.blue.withOpacity(0.22),
               thumbColor: Colors.blue.shade300,
-              overlayColor: Colors.blue.withOpacity(0.2),
-              trackHeight: 4.0,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
+              overlayColor: Colors.blue.withOpacity(0.13),
+              trackHeight: 3.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
             ),
             child: Slider(
               value: value,
