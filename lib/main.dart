@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flame/game.dart';
-import 'package:vector_math/vector_math_64.dart' show Vector2;
+import 'package:flame/components.dart'; // for Vector2
 import 'island_game.dart';
 
 void main() {
@@ -26,7 +26,7 @@ class _IslandAppState extends State<IslandApp>
   late Animation<double> _slideAnimation;
 
   IslandGame? game;
-  Vector2? lastPhysicalSize;
+  Vector2? lastLogicalSize;
 
   @override
   void initState() {
@@ -79,26 +79,23 @@ class _IslandAppState extends State<IslandApp>
         backgroundColor: Colors.black,
         body: LayoutBuilder(
           builder: (context, constraints) {
-            final pixelRatio = MediaQuery.of(context).devicePixelRatio;
             final logicalWidth = constraints.maxWidth;
             final logicalHeight = constraints.maxHeight;
-            final physicalWidth = logicalWidth * pixelRatio;
-            final physicalHeight = logicalHeight * pixelRatio;
-            final physicalSize = Vector2(physicalWidth, physicalHeight);
+            final logicalSize = Vector2(logicalWidth, logicalHeight);
 
             // Only create game once or if size changes
             if (game == null ||
-                lastPhysicalSize == null ||
-                lastPhysicalSize!.x != physicalWidth ||
-                lastPhysicalSize!.y != physicalHeight) {
+                lastLogicalSize == null ||
+                lastLogicalSize!.x != logicalWidth ||
+                lastLogicalSize!.y != logicalHeight) {
               game = IslandGame(
                 amplitude: amplitude,
                 wavelength: wavelength,
                 bias: bias,
                 seed: seed,
-                gameSize: physicalSize,
+                gameSize: logicalSize,
               );
-              lastPhysicalSize = physicalSize;
+              lastLogicalSize = logicalSize;
             }
 
             return Stack(

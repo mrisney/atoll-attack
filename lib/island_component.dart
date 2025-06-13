@@ -1,9 +1,8 @@
 import 'dart:ui' as ui;
 import 'dart:math' as math;
-import 'package:flame/components.dart';
+import 'package:flame/components.dart'; // for Vector2
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
-import 'package:vector_math/vector_math_64.dart' show Vector2;
 
 /// A GPU-accelerated island renderer component using a fragment shader.
 class IslandComponent extends PositionComponent {
@@ -31,6 +30,8 @@ class IslandComponent extends PositionComponent {
     required this.gameSize,
   }) {
     anchor = Anchor.center;
+    size = gameSize;
+    position = gameSize / 2;
   }
 
   @override
@@ -68,16 +69,11 @@ class IslandComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    // Center the coordinate system for consistent shader mapping
-    canvas.save();
-    canvas.translate(gameSize.x / 2, gameSize.y / 2);
-
     if (shaderLoaded && shader != null) {
       _renderShaderIsland(canvas);
     } else {
       _renderFallback(canvas);
     }
-    canvas.restore();
   }
 
   void _renderShaderIsland(Canvas canvas) {
@@ -91,9 +87,9 @@ class IslandComponent extends PositionComponent {
       ..setFloat(5, gameSize.y);
 
     final paint = Paint()..shader = shader;
-    // Draw a rectangle centered at (0,0) covering the full render area
+    // Draw a rectangle at (0,0) covering the full render area
     canvas.drawRect(
-      Rect.fromLTWH(-gameSize.x / 2, -gameSize.y / 2, gameSize.x, gameSize.y),
+      Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
       paint,
     );
   }
@@ -102,13 +98,13 @@ class IslandComponent extends PositionComponent {
     final maxRadius = gameSize.x * 0.4;
     // Water background
     canvas.drawRect(
-      Rect.fromLTWH(-gameSize.x / 2, -gameSize.y / 2, gameSize.x, gameSize.y),
+      Rect.fromLTWH(0, 0, gameSize.x, gameSize.y),
       Paint()..color = const Color(0xFF1E88E5),
     );
 
     // Irregular island polygon
     final islandPaint = Paint()..color = const Color(0xFF4CAF50);
-    final center = Offset.zero;
+    final center = Offset(gameSize.x / 2, gameSize.y / 2);
     for (int angle = 0; angle < 360; angle += 10) {
       double rad1 = angle * math.pi / 180;
       double rad2 = (angle + 10) * math.pi / 180;

@@ -1,6 +1,7 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:vector_math/vector_math_64.dart' show Vector2;
+import 'package:flame/components.dart'; // for Vector2
+import 'island_component.dart';
 
 /// The main Atoll Wars game using a GPU-accelerated island renderer.
 class IslandGame extends FlameGame with HasCollisionDetection {
@@ -18,7 +19,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required this.wavelength,
     required this.bias,
     required this.seed,
-    required this.gameSize, // Add this line!
+    required this.gameSize,
   });
 
   @override
@@ -27,7 +28,6 @@ class IslandGame extends FlameGame with HasCollisionDetection {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    // Use the passed-in gameSize for initial island setup
     _island = IslandComponent(
       radius: gameSize.x * 0.3,
       amplitude: amplitude,
