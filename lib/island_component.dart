@@ -1,25 +1,25 @@
-// lib/island_component.dart - GPU-based island with proper terrain colors
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
+import 'package:vector_math/vector_math_64.dart' show Vector2;
 
+/// A GPU-accelerated island renderer component using a fragment shader.
 class IslandComponent extends PositionComponent {
   double radius;
   double amplitude;
   double wavelength;
   double bias;
-  // Removed blur parameter - it's hardcoded as 0.0
   int seed;
   Vector2 gameSize;
 
-  // GPU shader properties
+  // Shader resources
   ui.FragmentProgram? fragmentProgram;
   ui.FragmentShader? shader;
   bool shaderLoaded = false;
 
-  // Fallback noise generator for gameplay features
+  // CPU fallback noise for gameplay queries and fallback rendering
   late fn.SimplexNoise noise;
 
   IslandComponent({
@@ -27,7 +27,6 @@ class IslandComponent extends PositionComponent {
     required this.amplitude,
     required this.wavelength,
     required this.bias,
-    // Removed blur parameter
     required this.seed,
     required this.gameSize,
   }) {
@@ -47,141 +46,118 @@ class IslandComponent extends PositionComponent {
           await ui.FragmentProgram.fromAsset('shaders/noisy_hex.frag');
       shader = fragmentProgram!.fragmentShader();
       shaderLoaded = true;
-      print('GPU fragment shader loaded successfully');
     } catch (e) {
-      print('Failed to load fragment shader: $e');
       shaderLoaded = false;
+      debugPrint('Failed to load fragment shader: $e');
     }
   }
 
+  /// Update shader and fallback noise parameters
   void updateParams({
     required double amplitude,
     required double wavelength,
     required double bias,
-    // Removed blur parameter
     required int seed,
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
     this.bias = bias;
-    // Removed blur assignment
     this.seed = seed;
-
-    // Update noise generator for gameplay features
     noise = fn.SimplexNoise(seed: seed, frequency: wavelength * 0.01);
   }
 
   @override
   void render(Canvas canvas) {
+    // Center the coordinate system for consistent shader mapping
+    canvas.save();
+    canvas.translate(gameSize.x / 2, gameSize.y / 2);
+
     if (shaderLoaded && shader != null) {
-      // Update shader uniforms - EXACTLY 6 uniforms (remove u_blur since it's not needed)
-      shader!.setFloat(0, amplitude); // u_amplitude
-      shader!.setFloat(1, wavelength); // u_wavelength
-      shader!.setFloat(2, bias); // u_bias
-      shader!.setFloat(3, seed.toDouble()); // u_seed
-      shader!.setFloat(4, gameSize.x); // u_resolution_x
-      shader!.setFloat(5, gameSize.y); // u_resolution_y
-      // Removed u_blur - it will be hardcoded in shader
-
-      // Create paint with GPU shader
-      final paint = Paint()..shader = shader;
-
-      // Draw full screen rectangle - GPU handles all pixel processing
-      canvas.drawRect(
-        Rect.fromLTWH(-gameSize.x / 2, -gameSize.y / 2, gameSize.x, gameSize.y),
-        paint,
-      );
+      _renderShaderIsland(canvas);
     } else {
-      // Improved fallback - show a basic island shape
       _renderFallback(canvas);
     }
+    canvas.restore();
+  }
+
+  void _renderShaderIsland(Canvas canvas) {
+    // Pass uniforms to shader: amplitude, wavelength, bias, seed, resolution x/y
+    shader!
+      ..setFloat(0, amplitude)
+      ..setFloat(1, wavelength)
+      ..setFloat(2, bias)
+      ..setFloat(3, seed.toDouble())
+      ..setFloat(4, gameSize.x)
+      ..setFloat(5, gameSize.y);
+
+    final paint = Paint()..shader = shader;
+    // Draw a rectangle centered at (0,0) covering the full render area
+    canvas.drawRect(
+      Rect.fromLTWH(-gameSize.x / 2, -gameSize.y / 2, gameSize.x, gameSize.y),
+      paint,
+    );
   }
 
   void _renderFallback(Canvas canvas) {
-    // Create a simple island visualization as fallback
-    final center = Offset.zero;
     final maxRadius = gameSize.x * 0.4;
-
-    // Draw water background
+    // Water background
     canvas.drawRect(
       Rect.fromLTWH(-gameSize.x / 2, -gameSize.y / 2, gameSize.x, gameSize.y),
-      Paint()..color = const Color(0xFF1E88E5), // Blue water
+      Paint()..color = const Color(0xFF1E88E5),
     );
 
-    // Draw island with noise-based irregular shape
-    final islandPaint = Paint()..color = const Color(0xFF4CAF50); // Green land
-
+    // Irregular island polygon
+    final islandPaint = Paint()..color = const Color(0xFF4CAF50);
+    final center = Offset.zero;
     for (int angle = 0; angle < 360; angle += 10) {
-      double radians = angle * math.pi / 180;
-      double noiseValue = noise.getNoise2(
-        math.cos(radians) * 0.1,
-        math.sin(radians) * 0.1,
-      );
-      double currentRadius = maxRadius * (0.6 + 0.4 * noiseValue);
+      double rad1 = angle * math.pi / 180;
+      double rad2 = (angle + 10) * math.pi / 180;
+      double n1 = noise.getNoise2(math.cos(rad1) * 0.1, math.sin(rad1) * 0.1);
+      double n2 = noise.getNoise2(math.cos(rad2) * 0.1, math.sin(rad2) * 0.1);
 
-      double nextRadians = (angle + 10) * math.pi / 180;
-      double nextNoiseValue = noise.getNoise2(
-        math.cos(nextRadians) * 0.1,
-        math.sin(nextRadians) * 0.1,
-      );
-      double nextRadius = maxRadius * (0.6 + 0.4 * nextNoiseValue);
+      double r1 = maxRadius * (0.6 + 0.4 * n1);
+      double r2 = maxRadius * (0.6 + 0.4 * n2);
 
-      // Draw triangle from center to edge
-      final path = Path();
-      path.moveTo(center.dx, center.dy);
-      path.lineTo(
-        center.dx + currentRadius * math.cos(radians),
-        center.dy + currentRadius * math.sin(radians),
-      );
-      path.lineTo(
-        center.dx + nextRadius * math.cos(nextRadians),
-        center.dy + nextRadius * math.sin(nextRadians),
-      );
-      path.close();
+      final path = Path()
+        ..moveTo(center.dx, center.dy)
+        ..lineTo(
+            center.dx + r1 * math.cos(rad1), center.dy + r1 * math.sin(rad1))
+        ..lineTo(
+            center.dx + r2 * math.cos(rad2), center.dy + r2 * math.sin(rad2))
+        ..close();
 
       canvas.drawPath(path, islandPaint);
     }
   }
 
-  // Utility methods for gameplay
+  // --- Gameplay utilities ---
+
+  /// Returns elevation at given world position (normalized, negative = water)
   double getElevationAt(Vector2 worldPosition) {
     Vector2 localPos = worldPosition - position;
     double distanceFromCenter = localPos.length;
+    if (distanceFromCenter > radius * 1.2) return -1.0; // Deep water
 
-    if (distanceFromCenter > radius * 1.2) {
-      return -1.0; // Deep water
-    }
-
-    // Use noise for elevation variation
-    double elevation = noise.getNoise2(
-      localPos.x * 0.01,
-      localPos.y * 0.01,
-    );
-
-    // Apply island falloff
+    double elevation = noise.getNoise2(localPos.x * 0.01, localPos.y * 0.01);
     double islandFactor = 1.0 - (distanceFromCenter / radius);
     elevation *= islandFactor.clamp(0.0, 1.0);
-
     return elevation;
   }
 
-  bool isOnLand(Vector2 worldPosition) {
-    return getElevationAt(worldPosition) > 0.0;
-  }
+  bool isOnLand(Vector2 worldPosition) => getElevationAt(worldPosition) > 0.0;
 
   double getMovementSpeedMultiplier(Vector2 worldPosition) {
     double elevation = getElevationAt(worldPosition);
-
-    if (elevation <= 0.0) return 0.0; // Can't move in water
-    if (elevation < 0.2) return 1.0; // Beach - normal speed
-    if (elevation < 0.4) return 0.9; // Grass - slightly slower
-    if (elevation < 0.6) return 0.7; // Hills - slower
-    if (elevation < 0.8) return 0.5; // Mountains - much slower
-    return 0.3; // High mountains - very slow
+    if (elevation <= 0.0) return 0.0;
+    if (elevation < 0.2) return 1.0;
+    if (elevation < 0.4) return 0.9;
+    if (elevation < 0.6) return 0.7;
+    if (elevation < 0.8) return 0.5;
+    return 0.3;
   }
 
   @override
   void update(double dt) {
-    // No time-based updates needed for static terrain
+    // No per-frame logic needed for static island
   }
 }

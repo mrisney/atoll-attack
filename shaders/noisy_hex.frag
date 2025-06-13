@@ -46,16 +46,17 @@ float fbm(vec2 x) {
 }
 
 void main() {
-
     vec2 fragCoord = FlutterFragCoord();
     vec2 u_resolution = vec2(u_resolution_x, u_resolution_y);
 
+    // PROPER CENTERING, do not change this!
     float minRes = min(u_resolution.x, u_resolution.y);
-    vec2 centered = (fragCoord - 0.5 * u_resolution) / (0.5 * minRes) - offset;
+    vec2 centered = (fragCoord - 0.5 * u_resolution) / (0.5 * minRes);
 
     float dist = length(centered);
-    float islandRadius = 0.8;
+    float islandRadius = 0.8; // Increase for larger island, decrease for smaller
 
+    // Noise for terrain
     vec2 noiseCoord = centered / u_wavelength + vec2(u_seed * 0.01);
     float noiseValue = fbm(noiseCoord);
 
