@@ -34,14 +34,13 @@ class IslandGame extends FlameGame with HasCollisionDetection {
   Future<void> onLoad() async {
     await super.onLoad();
     _island = IslandComponent(
-      radius: gameSize.x * 0.3,
       amplitude: amplitude,
       wavelength: wavelength,
       bias: bias,
       seed: seed,
       gameSize: gameSize,
       islandRadius: islandRadius,
-      showPerimeter: showPerimeter, // <-- pass the flag here!
+      showPerimeter: showPerimeter,
     );
     _island.position = gameSize / 2;
     add(_island);
@@ -56,7 +55,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required double bias,
     required int seed,
     required double islandRadius,
-    required bool showPerimeter, // <-- add this!
+    required bool showPerimeter,
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
@@ -72,7 +71,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         seed: seed,
         islandRadius: islandRadius,
       );
-      _island.showPerimeter = showPerimeter; // <-- always set this!
+      _island.showPerimeter = showPerimeter;
     }
   }
 
@@ -81,9 +80,8 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     super.onGameResize(newSize);
     gameSize = newSize;
     if (_isLoaded && _island.isMounted) {
-      _island.radius = newSize.x * 0.3;
-      _island.position = newSize / 2;
       _island.gameSize = newSize;
+      _island.position = newSize / 2;
       _island.updateParams(
         amplitude: amplitude,
         wavelength: wavelength,
@@ -91,7 +89,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         seed: seed,
         islandRadius: islandRadius,
       );
-      _island.showPerimeter = showPerimeter; // <-- always set this!
+      _island.showPerimeter = showPerimeter;
     }
   }
 

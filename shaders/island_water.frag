@@ -9,6 +9,8 @@ uniform float u_seed;
 uniform float u_resolution_x;
 uniform float u_resolution_y;
 uniform float u_island_radius;
+uniform float u_mode; // 0=normal render, 1=detection mode
+uniform float u_detection_threshold; // threshold for detection
 
 out vec4 fragColor;
 
@@ -46,13 +48,11 @@ float fbm(vec2 x) {
     return v;
 }
 
-// Add 1–3 peaks at seeded locations
 float add_peak(vec2 pos, vec2 center, float radius, float intensity) {
     float d = length(pos - center);
     return intensity * exp(-pow(d / radius, 2.0));
 }
 
-// Compute fake "normal" for simple highlight/shadow
 vec2 computeNormal(vec2 pos, float eps, float u_wavelength, float u_seed) {
     float hL = fbm((pos + vec2(-eps, 0.0)) / u_wavelength + vec2(u_seed * 0.01));
     float hR = fbm((pos + vec2( eps, 0.0)) / u_wavelength + vec2(u_seed * 0.01));
@@ -60,6 +60,28 @@ vec2 computeNormal(vec2 pos, float eps, float u_wavelength, float u_seed) {
     float hU = fbm((pos + vec2(0.0,  eps)) / u_wavelength + vec2(u_seed * 0.01));
     vec2 n = vec2(hL - hR, hD - hU);
     return normalize(n);
+}
+
+float getElevation(vec2 centered, float dist) {
+    vec2 noiseCoord = centered / u_wavelength + vec2(u_seed * 0.01);
+    float noiseValue = fbm(noiseCoord);
+    noiseValue = (noiseValue + 1.0) * 0.5;
+    noiseValue = noiseValue * u_amplitude + u_bias;
+    
+    vec2 peak1 = vec2(0.3 * sin(u_seed + 1.3), 0.25 * cos(u_seed + 2.7));
+    vec2 peak2 = vec2(-0.26 * cos(u_seed + 3.4), 0.12 * sin(u_seed + 5.8));
+    vec2 peak3 = vec2(0.15 * sin(u_seed + 4.1), -0.20 * cos(u_seed + 2.3));
+    
+    noiseValue += add_peak(centered, peak1, 0.13, 0.12);
+    noiseValue += add_peak(centered, peak2, 0.10, 0.08);
+    noiseValue += add_peak(centered, peak3, 0.09, 0.06);
+    
+    noiseValue = clamp(noiseValue, 0.0, 1.0);
+    float falloff = 1.0 - (dist / u_island_radius);
+    falloff = clamp(falloff, 0.0, 1.0);
+    noiseValue *= falloff;
+    
+    return noiseValue;
 }
 
 void main() {
@@ -70,77 +92,87 @@ void main() {
     vec2 centered = (fragCoord - 0.5 * u_resolution) / (0.5 * minRes);
 
     float dist = length(centered);
-    float islandRadius = u_island_radius;
+    float noiseValue = getElevation(centered, dist);
 
-    // Noise for terrain
-    vec2 noiseCoord = centered / u_wavelength + vec2(u_seed * 0.01);
-    float noiseValue = fbm(noiseCoord);
+    if (u_mode < 0.5) {
+        // Normal rendering mode
+        vec3 water1 = vec3(0.13, 0.52, 0.77);
+        vec3 water2 = vec3(0.29, 0.67, 0.91);
+        vec3 water3 = vec3(0.53, 0.82, 0.98);
+        vec3 sand    = vec3(1.0, 1.0, 0.65);
+        vec3 lowland = vec3(0.74, 0.95, 0.44);
+        vec3 upland  = vec3(0.61, 0.80, 0.31);
+        vec3 peak = vec3(0.85, 0.85, 0.83);
 
-    // Normalize noise to [0,1]
-    noiseValue = (noiseValue + 1.0) * 0.5;
-
-    // Add amplitude and bias
-    noiseValue = noiseValue * u_amplitude + u_bias;
-
-    // Add 2-3 seeded peaks
-    vec2 peak1 = vec2(0.3 * sin(u_seed + 1.3), 0.25 * cos(u_seed + 2.7));
-    vec2 peak2 = vec2(-0.26 * cos(u_seed + 3.4), 0.12 * sin(u_seed + 5.8));
-    vec2 peak3 = vec2(0.15 * sin(u_seed + 4.1), -0.20 * cos(u_seed + 2.3));
-
-    noiseValue += add_peak(centered, peak1, 0.13, 0.12);
-    noiseValue += add_peak(centered, peak2, 0.10, 0.08);
-    noiseValue += add_peak(centered, peak3, 0.09, 0.06);
-
-    // Clamp to [0, 1]
-    noiseValue = clamp(noiseValue, 0.0, 1.0);
-
-    // Island falloff, softens edges
-    float falloff = 1.0 - (dist / islandRadius);
-    falloff = clamp(falloff, 0.0, 1.0);
-    noiseValue *= falloff;
-
-    // Color bands for water and land
-    vec3 water1 = vec3(0.13, 0.52, 0.77);    // Deep water
-    vec3 water2 = vec3(0.29, 0.67, 0.91);    // Middle water
-    vec3 water3 = vec3(0.53, 0.82, 0.98);    // Shallows
-
-    vec3 sand    = vec3(1.0, 1.0, 0.65);     // Sand
-    vec3 lowland = vec3(0.74, 0.95, 0.44);   // Light green
-    vec3 upland  = vec3(0.61, 0.80, 0.31);   // Darker green
-    
-    // CHOOSE ONE OF THE FOLLOWING FOR THE HIGH PEAK:
-    // Light grey
-    vec3 peak = vec3(0.85, 0.85, 0.83);
-    // Charcoal
-    // vec3 peak = vec3(0.23, 0.25, 0.28);
-    // Dark green
-    // vec3 peak = vec3(0.21, 0.36, 0.18);
-
-    vec3 color;
-    if (dist > islandRadius) {
-        color = water1;
-    } else if (noiseValue < 0.18) {
-        color = water1;
-    } else if (noiseValue < 0.25) {
-        color = water2;
-    } else if (noiseValue < 0.32) {
-        color = water3;
-    } else {
-        float eps = 0.008;
-        vec2 lightDir = normalize(vec2(-0.6, -1.0));
-        vec2 n = computeNormal(centered, eps, u_wavelength, u_seed);
-        float highlight = clamp(dot(n, lightDir)*0.4 + 0.7, 0.7, 1.1);
-
-        if (noiseValue < 0.39) {
-            color = sand * highlight;
-        } else if (noiseValue < 0.54) {
-            color = lowland * highlight;
-        } else if (noiseValue < 0.7) {
-            color = upland * highlight;
+        vec3 color;
+        if (dist > u_island_radius) {
+            color = water1;
+        } else if (noiseValue < 0.18) {
+            color = water1;
+        } else if (noiseValue < 0.25) {
+            color = water2;
+        } else if (noiseValue < 0.32) {
+            color = water3;
         } else {
-            color = peak * highlight;
+            float eps = 0.008;
+            vec2 lightDir = normalize(vec2(-0.6, -1.0));
+            vec2 n = computeNormal(centered, eps, u_wavelength, u_seed);
+            float highlight = clamp(dot(n, lightDir)*0.4 + 0.7, 0.7, 1.1);
+
+            if (noiseValue < 0.39) {
+                color = sand * highlight;
+            } else if (noiseValue < 0.54) {
+                color = lowland * highlight;
+            } else if (noiseValue < 0.7) {
+                color = upland * highlight;
+            } else {
+                color = peak * highlight;
+            }
+        }
+        fragColor = vec4(color, 1.0);
+        
+    } else {
+        // Detection mode - find edges at the specified threshold
+        vec2 texel = vec2(1.0) / u_resolution;
+        
+        // Multi-sample edge detection for smoother results
+        float center = noiseValue;
+        float edgeStrength = 0.0;
+        int samples = 0;
+        
+        // Sample in a 3x3 grid around current pixel
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue; // Skip center
+                
+                vec2 offset = vec2(float(dx), float(dy));
+                vec2 samplePos = (fragCoord + offset - 0.5 * u_resolution) / (0.5 * minRes);
+                float sampleDist = length(samplePos);
+                float sampleValue = getElevation(samplePos, sampleDist);
+                
+                // Check for threshold crossing
+                if ((center >= u_detection_threshold && sampleValue < u_detection_threshold) ||
+                    (center < u_detection_threshold && sampleValue >= u_detection_threshold)) {
+                    edgeStrength += 1.0;
+                }
+                samples++;
+            }
+        }
+        
+        // Normalize edge strength
+        edgeStrength /= float(samples);
+        
+        // Only output if edge strength is above threshold (reduces noise)
+        if (edgeStrength > 0.2) {
+            // Encode coordinate data in color channels
+            float normalizedX = fragCoord.x / u_resolution.x;
+            float normalizedY = fragCoord.y / u_resolution.y;
+            
+            // Encode edge strength in alpha channel for potential future use
+            fragColor = vec4(normalizedX, edgeStrength, normalizedY, 1.0);
+        } else {
+            // No significant edge - output transparent black
+            fragColor = vec4(0.0, 0.0, 0.0, 0.0);
         }
     }
-
-    fragColor = vec4(color, 1.0);
 }
