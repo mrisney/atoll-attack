@@ -165,29 +165,60 @@ class IslandComponent extends PositionComponent {
     }
   }
 
+  /// Helper: chain unordered segment pairs into a continuous contour/polyline
+  List<Vector2> _chainSegments(List<Vector2> segments, {double epsilon = 0.5}) {
+    if (segments.length < 4) return segments;
+    // Pair up segments by proximity, not equality
+    List<Vector2> ordered = [segments[0]];
+    Vector2 current = segments[1];
+    ordered.add(current);
+    segments = segments.sublist(2);
+
+    while (segments.isNotEmpty) {
+      bool found = false;
+      for (int i = 0; i < segments.length; i += 2) {
+        if ((segments[i] - current).length < epsilon) {
+          current = segments[i + 1];
+          ordered.add(current);
+          segments.removeAt(i + 1);
+          segments.removeAt(i);
+          found = true;
+          break;
+        } else if ((segments[i + 1] - current).length < epsilon) {
+          current = segments[i];
+          ordered.add(current);
+          segments.removeAt(i + 1);
+          segments.removeAt(i);
+          found = true;
+          break;
+        }
+      }
+      if (!found) break; // Can't chain further
+    }
+    return ordered;
+  }
+
   void _drawPerimeter(Canvas canvas) {
     if (_perimeterDirty || _perimeter.isEmpty) {
-      _perimeter = computePerimeter(isoLevel: -0.5); // Or your ideal value
+      _perimeter = computePerimeter(isoLevel: -0.5);
       _perimeterDirty = false;
       debugPrint('Perimeter points: ${_perimeter.length}');
     }
-    if (_perimeter.length < 2) {
-      debugPrint('Not enough perimeter points to draw.');
-      return;
-    }
+    if (_perimeter.length < 2) return;
 
+    final ordered = _chainSegments(_perimeter);
     final paint = Paint()
       ..color = Colors.red
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
 
-    // Draw each segment as a line
-    for (int i = 0; i + 1 < _perimeter.length; i += 2) {
-      canvas.drawLine(
-        Offset(_perimeter[i].x, _perimeter[i].y),
-        Offset(_perimeter[i + 1].x, _perimeter[i + 1].y),
-        paint,
-      );
+    final path = Path();
+    path.moveTo(ordered[0].x, ordered[0].y);
+    for (int i = 1; i < ordered.length; i++) {
+      path.lineTo(ordered[i].x, ordered[i].y);
     }
+    path.close();
+    canvas.drawPath(path, paint);
   }
 
   /// Computes the coastline perimeter as a list of Vector2 points using the marching squares algorithm.

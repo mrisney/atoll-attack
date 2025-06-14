@@ -1,0 +1,32 @@
+name: atoll_wars
+description: XKCD-style island RTS game
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flame: ^1.29.0 
+  ordered_set: ^8.0.0
+  collection: ^1.19.1
+  fast_noise: ^2.0.0
+  flutter_hooks: ^0.21.2
+  flame_forge2d: ^0.19.0+2
+  a_star: ^3.0.1
+ 
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/maps/
+  shaders:
+    - shaders/island_water.frag
