@@ -7,12 +7,12 @@ class GameControlsPanel extends StatelessWidget {
   final VoidCallback onClose;
 
   const GameControlsPanel({
-    super.key,
+    Key? key,
     required this.showPerimeter,
     required this.onTogglePerimeter,
     required this.onSpawnUnits,
     required this.onClose,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -33,14 +33,20 @@ class GameControlsPanel extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Show Perimeter',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold)),
+                const Text(
+                  'Show Perimeter',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 Switch(
                   value: showPerimeter,
                   onChanged: onTogglePerimeter,
+                  activeColor: Colors.deepPurple,
+                  inactiveThumbColor: Colors.grey,
+                  inactiveTrackColor: Colors.white24,
                 ),
               ],
             ),
@@ -52,6 +58,16 @@ class GameControlsPanel extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange.shade700,
                 foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ],

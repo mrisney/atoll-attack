@@ -17,7 +17,6 @@ class IslandApp extends StatefulWidget {
 }
 
 class _IslandAppState extends State<IslandApp> {
-  // Island generation settings
   double amplitude = 1.6;
   double wavelength = 0.25;
   double bias = -0.7;
@@ -25,7 +24,6 @@ class _IslandAppState extends State<IslandApp> {
   int seed = 42;
   bool showPerimeter = false;
 
-  // Panel visibility
   bool showIslandSettings = false;
   bool showGameControls = false;
 
@@ -39,6 +37,7 @@ class _IslandAppState extends State<IslandApp> {
       bias: bias,
       seed: seed,
       islandRadius: islandRadius,
+      showPerimeter: showPerimeter,
     );
   }
 
@@ -76,13 +75,12 @@ class _IslandAppState extends State<IslandApp> {
               children: [
                 GameWidget(game: game!),
 
-                // Main top-right menu: open settings or game controls
+                // Top-right menu for settings and controls
                 Positioned(
                   top: 30,
                   right: 16,
                   child: Column(
                     children: [
-                      // Island Settings button
                       FloatingActionButton(
                         heroTag: "islandSettingsBtn",
                         mini: true,
@@ -96,7 +94,6 @@ class _IslandAppState extends State<IslandApp> {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Game Controls button
                       FloatingActionButton(
                         heroTag: "gameControlsBtn",
                         mini: true,
@@ -170,6 +167,7 @@ class _IslandAppState extends State<IslandApp> {
                       onTogglePerimeter: (v) => setState(() {
                         showPerimeter = v;
                         game?.showPerimeter = v;
+                        _updateGame();
                       }),
                       onSpawnUnits: () => game?.spawnUnits(12),
                       onClose: () => setState(() => showGameControls = false),

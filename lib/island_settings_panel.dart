@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class IslandSettingsPanel extends StatelessWidget {
+class IslandSettingsPanel extends StatefulWidget {
   final double amplitude;
   final double wavelength;
   final double bias;
@@ -31,6 +31,56 @@ class IslandSettingsPanel extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<IslandSettingsPanel> createState() => _IslandSettingsPanelState();
+}
+
+class _IslandSettingsPanelState extends State<IslandSettingsPanel> {
+  late double amplitude;
+  late double wavelength;
+  late double bias;
+  late double islandRadius;
+  late int seed;
+
+  @override
+  void initState() {
+    super.initState();
+    amplitude = widget.amplitude;
+    wavelength = widget.wavelength;
+    bias = widget.bias;
+    islandRadius = widget.islandRadius;
+    seed = widget.seed;
+  }
+
+  void _setAmplitude(double value) {
+    setState(() => amplitude = value);
+    widget.onAmplitudeChanged(value);
+  }
+
+  void _setWavelength(double value) {
+    setState(() => wavelength = value);
+    widget.onWavelengthChanged(value);
+  }
+
+  void _setBias(double value) {
+    setState(() => bias = value);
+    widget.onBiasChanged(value);
+  }
+
+  void _setIslandRadius(double value) {
+    setState(() => islandRadius = value);
+    widget.onIslandRadiusChanged(value);
+  }
+
+  void _setSeed(int value) {
+    setState(() => seed = value);
+    widget.onSeedChanged(value);
+  }
+
+  void _randomize() {
+    widget.onRandomize();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Card(
       color: Colors.black.withOpacity(0.96),
@@ -45,16 +95,16 @@ class IslandSettingsPanel extends StatelessWidget {
               alignment: Alignment.topRight,
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white70),
-                onPressed: onClose,
+                onPressed: widget.onClose,
               ),
             ),
             _buildSlider(
-                context, 'Amplitude', amplitude, 1.0, 2.0, onAmplitudeChanged),
-            _buildSlider(context, 'Wavelength', wavelength, 0.15, 0.7,
-                onWavelengthChanged),
-            _buildSlider(context, 'Bias', bias, -1.0, 0.2, onBiasChanged),
+                context, 'Amplitude', amplitude, 1.0, 2.0, _setAmplitude),
+            _buildSlider(
+                context, 'Wavelength', wavelength, 0.15, 0.7, _setWavelength),
+            _buildSlider(context, 'Bias', bias, -1.0, 0.2, _setBias),
             _buildSlider(context, 'Island Size', islandRadius, 0.4, 1.2,
-                onIslandRadiusChanged),
+                _setIslandRadius),
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -75,8 +125,11 @@ class IslandSettingsPanel extends StatelessWidget {
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: () => onSeedChanged(
-                          DateTime.now().millisecondsSinceEpoch % 100000),
+                      onPressed: () {
+                        final newSeed =
+                            DateTime.now().millisecondsSinceEpoch % 100000;
+                        _setSeed(newSeed);
+                      },
                       child: const Icon(Icons.refresh, size: 18),
                     ),
                     const SizedBox(width: 6),
@@ -89,14 +142,13 @@ class IslandSettingsPanel extends StatelessWidget {
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: onRandomize,
+                      onPressed: _randomize,
                       child: const Icon(Icons.shuffle, size: 18),
                     ),
                   ],
                 ),
               ],
             ),
-            // (Optional: Add profile/preset Save/Load buttons here)
           ],
         ),
       ),

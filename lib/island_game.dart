@@ -12,12 +12,10 @@ class IslandGame extends FlameGame with HasCollisionDetection {
   int seed;
   Vector2 gameSize;
   double islandRadius;
+  bool showPerimeter;
 
   late IslandComponent _island;
   bool _isLoaded = false;
-
-  // Add your new fields here
-  bool showPerimeter = false;
 
   IslandGame({
     required this.amplitude,
@@ -43,6 +41,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
       seed: seed,
       gameSize: gameSize,
       islandRadius: islandRadius,
+      showPerimeter: showPerimeter, // <-- pass the flag here!
     );
     _island.position = gameSize / 2;
     add(_island);
@@ -57,12 +56,14 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required double bias,
     required int seed,
     required double islandRadius,
+    required bool showPerimeter, // <-- add this!
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
     this.bias = bias;
     this.seed = seed;
     this.islandRadius = islandRadius;
+    this.showPerimeter = showPerimeter;
     if (_isLoaded && _island.isMounted) {
       _island.updateParams(
         amplitude: amplitude,
@@ -71,6 +72,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         seed: seed,
         islandRadius: islandRadius,
       );
+      _island.showPerimeter = showPerimeter; // <-- always set this!
     }
   }
 
@@ -89,13 +91,14 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         seed: seed,
         islandRadius: islandRadius,
       );
+      _island.showPerimeter = showPerimeter; // <-- always set this!
     }
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    // Make sure perimeter flag is always in sync
+    // Keep perimeter flag in sync
     if (_isLoaded && _island.isMounted) {
       _island.showPerimeter = showPerimeter;
     }
@@ -122,13 +125,11 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     return 1.0;
   }
 
-  // --- New: spawnUnits ---
   void spawnUnits(int count) {
     if (!_isLoaded || !_island.isMounted) return;
     final rng = Random();
     int attempts = 0, spawned = 0;
     while (spawned < count && attempts < count * 20) {
-      // Try random positions within the game area
       final position = Vector2(
         rng.nextDouble() * gameSize.x,
         rng.nextDouble() * gameSize.y,

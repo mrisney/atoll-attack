@@ -1,33 +1,27 @@
 import 'dart:ui' as ui;
 import 'dart:math' as math;
-import 'package:flame/components.dart'; // for Vector2
+import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
 
-/// IslandComponent renders and describes a procedural island,
-/// including coastline/perimeter sampling for gameplay logic.
 class IslandComponent extends PositionComponent {
-  double radius; // Gameplay radius, used for perimeter and queries
+  double radius;
   double amplitude;
   double wavelength;
   double bias;
   int seed;
   Vector2 gameSize;
-  double islandRadius; // Value between 0.4 and 1.2 (controls falloff)
+  double islandRadius;
 
-  // Shader resources
   ui.FragmentProgram? fragmentProgram;
   ui.FragmentShader? shader;
   bool shaderLoaded = false;
 
-  // CPU fallback noise for gameplay queries and fallback rendering
   late fn.SimplexNoise noise;
 
-  /// Perimeter points (sampled coastline), initialized after onLoad
-  late List<Vector2> perimeter;
-
-  /// Controls if perimeter is drawn (set by IslandGame)
+  List<Vector2> _perimeter = [];
   bool showPerimeter = false;
+  bool _perimeterDirty = true;
 
   IslandComponent({
     required this.radius,
@@ -49,7 +43,7 @@ class IslandComponent extends PositionComponent {
     await super.onLoad();
     noise = fn.SimplexNoise(seed: seed, frequency: wavelength * 0.01);
     await _loadShader();
-    perimeter = computePerimeter(numPoints: 180); // For gameplay/queries
+    _perimeterDirty = true;
   }
 
   Future<void> _loadShader() async {
@@ -64,7 +58,6 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Update procedural params and re-sample perimeter
   void updateParams({
     required double amplitude,
     required double wavelength,
@@ -78,7 +71,7 @@ class IslandComponent extends PositionComponent {
     this.seed = seed;
     this.islandRadius = islandRadius;
     noise = fn.SimplexNoise(seed: seed, frequency: wavelength * 0.01);
-    perimeter = computePerimeter(numPoints: 180);
+    _perimeterDirty = true;
   }
 
   @override
@@ -88,8 +81,10 @@ class IslandComponent extends PositionComponent {
     } else {
       _renderFallback(canvas);
     }
+
     if (showPerimeter) {
-      _renderPerimeter(canvas);
+      _drawGrid(canvas); // Draw grid cells, for debugging
+      _drawPerimeter(canvas);
     }
   }
 
@@ -139,24 +134,185 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Draw perimeter for debug/visualization
-  void _renderPerimeter(Canvas canvas) {
-    if (perimeter.isEmpty) return;
-    final paint = Paint()
-      ..color = Colors.red.withOpacity(0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final path = Path()..moveTo(perimeter[0].x, perimeter[0].y);
-    for (final pt in perimeter) {
-      path.lineTo(pt.x, pt.y);
+  void _drawGrid(Canvas canvas, {int gridSteps = 40}) {
+    // Draw thin black lines for the marching squares grid.
+    final double step = (radius * 2) / gridSteps;
+    final Paint gridPaint = Paint()
+      ..color = Colors.black.withOpacity(0.15)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+
+    final double left = position.x - radius;
+    final double top = position.y - radius;
+
+    // Vertical lines
+    for (int i = 0; i <= gridSteps; i++) {
+      final x = left + i * step;
+      canvas.drawLine(
+        Offset(x, top),
+        Offset(x, top + 2 * radius),
+        gridPaint,
+      );
     }
-    path.close();
-    canvas.drawPath(path, paint);
+    // Horizontal lines
+    for (int j = 0; j <= gridSteps; j++) {
+      final y = top + j * step;
+      canvas.drawLine(
+        Offset(left, y),
+        Offset(left + 2 * radius, y),
+        gridPaint,
+      );
+    }
   }
 
-  // --- Gameplay utilities ---
+  void _drawPerimeter(Canvas canvas) {
+    if (_perimeterDirty || _perimeter.isEmpty) {
+      _perimeter = computePerimeter(isoLevel: -0.5); // Or your ideal value
+      _perimeterDirty = false;
+      debugPrint('Perimeter points: ${_perimeter.length}');
+    }
+    if (_perimeter.length < 2) {
+      debugPrint('Not enough perimeter points to draw.');
+      return;
+    }
 
-  /// Returns elevation at given world position (normalized, negative = water)
+    final paint = Paint()
+      ..color = Colors.red
+      ..strokeWidth = 2.0;
+
+    // Draw each segment as a line
+    for (int i = 0; i + 1 < _perimeter.length; i += 2) {
+      canvas.drawLine(
+        Offset(_perimeter[i].x, _perimeter[i].y),
+        Offset(_perimeter[i + 1].x, _perimeter[i + 1].y),
+        paint,
+      );
+    }
+  }
+
+  /// Computes the coastline perimeter as a list of Vector2 points using the marching squares algorithm.
+  /// The grid is centered on the island, and isoLevel determines the elevation threshold for the land/water boundary.
+  List<Vector2> computePerimeter({
+    int gridSteps = 80,
+    double isoLevel = 0.0,
+  }) {
+    final List<Vector2> outline = [];
+    final double step = (radius * 2) / gridSteps;
+    final List<List<double>> elevations = List.generate(
+      gridSteps + 1,
+      (_) => List.filled(gridSteps + 1, 0.0),
+    );
+
+    // DEBUG: Track min/max elevation and counts for land/water
+    double minElevation = double.infinity;
+    double maxElevation = -double.infinity;
+    int landCount = 0, waterCount = 0;
+
+    // Precompute elevations for every grid point
+    for (int i = 0; i <= gridSteps; i++) {
+      for (int j = 0; j <= gridSteps; j++) {
+        final localX = -radius + i * step;
+        final localY = -radius + j * step;
+        final worldPos = position + Vector2(localX, localY);
+        final elev = getElevationAt(worldPos);
+        elevations[i][j] = elev;
+        if (elev < minElevation) minElevation = elev;
+        if (elev > maxElevation) maxElevation = elev;
+        if (elev > isoLevel) {
+          landCount++;
+        } else {
+          waterCount++;
+        }
+      }
+    }
+
+    debugPrint(
+        "computePerimeter isoLevel=$isoLevel minElev=$minElevation maxElev=$maxElevation land=$landCount water=$waterCount");
+
+    // If all are land or all are water, perimeter can't be found
+    if (landCount == 0 || waterCount == 0) {
+      debugPrint(
+          "computePerimeter: Entire grid is land or water, adjust isoLevel!");
+      return outline;
+    }
+
+    // Marching squares: process each cell in the grid
+    for (int i = 0; i < gridSteps; i++) {
+      for (int j = 0; j < gridSteps; j++) {
+        // Corners of the cell
+        final x0 = -radius + i * step;
+        final y0 = -radius + j * step;
+        final x1 = x0 + step;
+        final y1 = y0 + step;
+
+        final p00 = position + Vector2(x0, y0);
+        final p10 = position + Vector2(x1, y0);
+        final p01 = position + Vector2(x0, y1);
+        final p11 = position + Vector2(x1, y1);
+
+        final e00 = elevations[i][j];
+        final e10 = elevations[i + 1][j];
+        final e01 = elevations[i][j + 1];
+        final e11 = elevations[i + 1][j + 1];
+
+        int idx = 0;
+        if (e00 > isoLevel) idx |= 1;
+        if (e10 > isoLevel) idx |= 2;
+        if (e11 > isoLevel) idx |= 4;
+        if (e01 > isoLevel) idx |= 8;
+
+        if (idx == 0 || idx == 15) continue;
+
+        Vector2 interp(Vector2 p1, Vector2 p2, double v1, double v2) {
+          if ((v2 - v1).abs() < 1e-8) return p1;
+          final t = (isoLevel - v1) / (v2 - v1);
+          return p1 + (p2 - p1) * t;
+        }
+
+        switch (idx) {
+          case 1:
+          case 14:
+            outline.add(interp(p00, p10, e00, e10));
+            outline.add(interp(p00, p01, e00, e01));
+            break;
+          case 2:
+          case 13:
+            outline.add(interp(p10, p00, e10, e00));
+            outline.add(interp(p10, p11, e10, e11));
+            break;
+          case 4:
+          case 11:
+            outline.add(interp(p11, p10, e11, e10));
+            outline.add(interp(p11, p01, e11, e01));
+            break;
+          case 8:
+          case 7:
+            outline.add(interp(p01, p00, e01, e00));
+            outline.add(interp(p01, p11, e01, e11));
+            break;
+          case 3:
+          case 12:
+            outline.add(interp(p00, p01, e00, e01));
+            outline.add(interp(p10, p11, e10, e11));
+            break;
+          case 6:
+          case 9:
+            outline.add(interp(p10, p00, e10, e00));
+            outline.add(interp(p11, p01, e11, e01));
+            break;
+          case 5:
+          case 10:
+            outline.add(interp(p00, p10, e00, e10));
+            outline.add(interp(p01, p11, e01, e11));
+            break;
+        }
+      }
+    }
+
+    debugPrint("computePerimeter: outline points = ${outline.length}");
+    return outline;
+  }
+
   double getElevationAt(Vector2 worldPosition) {
     Vector2 localPos = worldPosition - position;
     double distanceFromCenter = localPos.length;
@@ -168,10 +324,8 @@ class IslandComponent extends PositionComponent {
     return elevation;
   }
 
-  /// Returns true if world position is on land
   bool isOnLand(Vector2 worldPosition) => getElevationAt(worldPosition) > 0.0;
 
-  /// Returns movement speed multiplier at world position
   double getMovementSpeedMultiplier(Vector2 worldPosition) {
     double elevation = getElevationAt(worldPosition);
     if (elevation <= 0.0) return 0.0;
@@ -180,64 +334,6 @@ class IslandComponent extends PositionComponent {
     if (elevation < 0.6) return 0.7;
     if (elevation < 0.8) return 0.5;
     return 0.3;
-  }
-
-  /// Compute the coastline/perimeter as a polyline of `numPoints` points.
-  /// Each point is the farthest-on-land point in that direction from center.
-  List<Vector2> computePerimeter({int numPoints = 180}) {
-    List<Vector2> edgePoints = [];
-    final center = position;
-    final minR = radius * 0.6;
-    final maxR = radius * 1.2;
-    for (int i = 0; i < numPoints; i++) {
-      double angle = (2 * math.pi * i) / numPoints;
-      Vector2 pt = center;
-      // Step radially outward until you leave land
-      for (double r = minR; r < maxR; r += 2.0) {
-        final testPt =
-            center + Vector2(r * math.cos(angle), r * math.sin(angle));
-        if (!isOnLand(testPt)) {
-          // Step back for accuracy
-          pt = center +
-              Vector2((r - 2.0) * math.cos(angle), (r - 2.0) * math.sin(angle));
-          break;
-        }
-      }
-      edgePoints.add(pt);
-    }
-    return edgePoints;
-  }
-
-  /// Returns the closest perimeter point to [worldPosition]
-  Vector2 closestPerimeterPoint(Vector2 worldPosition) {
-    if (perimeter.isEmpty) return position;
-    Vector2 closest = perimeter.first;
-    double minDist = (worldPosition - closest).length2;
-    for (final pt in perimeter) {
-      final d = (worldPosition - pt).length2;
-      if (d < minDist) {
-        closest = pt;
-        minDist = d;
-      }
-    }
-    return closest;
-  }
-
-  /// Returns true if point is inside the perimeter polygon (crossing number method)
-  bool isInsidePerimeter(Vector2 worldPosition) {
-    if (perimeter.length < 3) return false;
-    int crossings = 0;
-    for (int i = 0; i < perimeter.length; i++) {
-      final a = perimeter[i];
-      final b = perimeter[(i + 1) % perimeter.length];
-      if (((a.y > worldPosition.y) != (b.y > worldPosition.y)) &&
-          (worldPosition.x <
-              (b.x - a.x) * (worldPosition.y - a.y) / (b.y - a.y + 1e-9) +
-                  a.x)) {
-        crossings++;
-      }
-    }
-    return (crossings % 2) == 1;
   }
 
   @override
