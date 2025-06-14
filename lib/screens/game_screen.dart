@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 import 'package:flame/game.dart';
 import '../providers/game_provider.dart';
 import '../widgets/island_settings_panel.dart';

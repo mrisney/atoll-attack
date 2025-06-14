@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 import 'package:flame/components.dart'; // for Vector2
 import '../models/island_settings.dart';
 import '../game/island_game.dart';
