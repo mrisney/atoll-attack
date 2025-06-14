@@ -1,7 +1,9 @@
 import 'package:flame/game.dart';
+import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
-import 'package:flame/components.dart'; // for Vector2
 import 'island_component.dart';
+import 'unit_component.dart';
+import 'dart:math';
 
 class IslandGame extends FlameGame with HasCollisionDetection {
   double amplitude;
@@ -9,10 +11,13 @@ class IslandGame extends FlameGame with HasCollisionDetection {
   double bias;
   int seed;
   Vector2 gameSize;
-  double islandRadius; // NEW
+  double islandRadius;
 
   late IslandComponent _island;
   bool _isLoaded = false;
+
+  // Add your new fields here
+  bool showPerimeter = false;
 
   IslandGame({
     required this.amplitude,
@@ -20,7 +25,8 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required this.bias,
     required this.seed,
     required this.gameSize,
-    required this.islandRadius, // NEW
+    required this.islandRadius,
+    this.showPerimeter = false,
   });
 
   @override
@@ -36,7 +42,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
       bias: bias,
       seed: seed,
       gameSize: gameSize,
-      islandRadius: islandRadius, // NEW
+      islandRadius: islandRadius,
     );
     _island.position = gameSize / 2;
     add(_island);
@@ -50,7 +56,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     required double wavelength,
     required double bias,
     required int seed,
-    required double islandRadius, // NEW
+    required double islandRadius,
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
@@ -63,7 +69,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         wavelength: wavelength,
         bias: bias,
         seed: seed,
-        islandRadius: islandRadius, // NEW
+        islandRadius: islandRadius,
       );
     }
   }
@@ -81,7 +87,7 @@ class IslandGame extends FlameGame with HasCollisionDetection {
         wavelength: wavelength,
         bias: bias,
         seed: seed,
-        islandRadius: islandRadius, // NEW
+        islandRadius: islandRadius,
       );
     }
   }
@@ -89,6 +95,10 @@ class IslandGame extends FlameGame with HasCollisionDetection {
   @override
   void update(double dt) {
     super.update(dt);
+    // Make sure perimeter flag is always in sync
+    if (_isLoaded && _island.isMounted) {
+      _island.showPerimeter = showPerimeter;
+    }
   }
 
   double getElevationAt(Vector2 worldPosition) {
@@ -110,5 +120,24 @@ class IslandGame extends FlameGame with HasCollisionDetection {
       return _island.getMovementSpeedMultiplier(worldPosition);
     }
     return 1.0;
+  }
+
+  // --- New: spawnUnits ---
+  void spawnUnits(int count) {
+    if (!_isLoaded || !_island.isMounted) return;
+    final rng = Random();
+    int attempts = 0, spawned = 0;
+    while (spawned < count && attempts < count * 20) {
+      // Try random positions within the game area
+      final position = Vector2(
+        rng.nextDouble() * gameSize.x,
+        rng.nextDouble() * gameSize.y,
+      );
+      if (_island.isOnLand(position)) {
+        add(UnitComponent(position: position));
+        spawned++;
+      }
+      attempts++;
+    }
   }
 }

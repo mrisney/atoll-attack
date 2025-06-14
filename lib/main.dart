@@ -11,22 +11,21 @@ class IslandApp extends StatefulWidget {
   const IslandApp({Key? key}) : super(key: key);
 
   @override
-  _IslandAppState createState() => _IslandAppState();
+  State<IslandApp> createState() => _IslandAppState();
 }
 
 class _IslandAppState extends State<IslandApp>
     with SingleTickerProviderStateMixin {
-  // Updated defaults for visually appealing islands
   double amplitude = 1.6;
   double wavelength = 0.25;
   double bias = -0.7;
   double islandRadius = 0.8;
   int seed = 42;
-
+  bool showPerimeter = false;
   bool _isPanelVisible = true;
+
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
-
   IslandGame? game;
   Vector2? lastLogicalSize;
 
@@ -37,13 +36,8 @@ class _IslandAppState extends State<IslandApp>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _slideAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _slideAnimation = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
     _animationController.forward();
   }
 
@@ -97,14 +91,16 @@ class _IslandAppState extends State<IslandApp>
                 seed: seed,
                 gameSize: logicalSize,
                 islandRadius: islandRadius,
+                showPerimeter: showPerimeter,
               );
               lastLogicalSize = logicalSize;
+            } else {
+              game!.showPerimeter = showPerimeter;
             }
 
             return Stack(
               children: [
                 GameWidget(game: game!),
-
                 // Toggle button for panel
                 Positioned(
                   top: 30,
@@ -132,20 +128,19 @@ class _IslandAppState extends State<IslandApp>
                     ),
                   ),
                 ),
-
-                // Collapsible control panel (smaller, bottom-centered)
-                if (_isPanelVisible)
-                  AnimatedBuilder(
-                    animation: _slideAnimation,
-                    builder: (context, child) {
-                      return Positioned(
-                        left: 24,
-                        right: 24,
-                        bottom: -180 + (180 * _slideAnimation.value),
-                        child: _buildControlPanel(),
-                      );
-                    },
-                  ),
+                // Collapsible control panel (bottom-centered)
+                AnimatedBuilder(
+                  animation: _slideAnimation,
+                  builder: (context, child) {
+                    return Positioned(
+                      left: 24,
+                      right: 24,
+                      bottom: -220 +
+                          (220 * (_isPanelVisible ? _slideAnimation.value : 0)),
+                      child: _buildControlPanel(),
+                    );
+                  },
+                ),
               ],
             );
           },
@@ -178,14 +173,17 @@ class _IslandAppState extends State<IslandApp>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Panel handle
-          Container(
-            width: 32,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(2),
+          // Panel handle (tap to minimize)
+          GestureDetector(
+            onTap: _togglePanel,
+            child: Container(
+              width: 32,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
           _buildSlider('Amplitude', amplitude, 1.0, 2.0, (v) {
@@ -213,8 +211,6 @@ class _IslandAppState extends State<IslandApp>
             });
           }),
           const SizedBox(height: 10),
-
-          // Seed controls (in a more compact layout)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -267,6 +263,43 @@ class _IslandAppState extends State<IslandApp>
                     child: const Icon(Icons.shuffle, size: 18),
                   ),
                 ],
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white38, height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Perimeter',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold)),
+              Switch(
+                value: showPerimeter,
+                onChanged: (value) {
+                  setState(() {
+                    showPerimeter = value;
+                    game?.showPerimeter = value;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.group),
+                label: const Text('Spawn 12 Units'),
+                onPressed: () {
+                  game?.spawnUnits(12);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  foregroundColor: Colors.white,
+                ),
               ),
             ],
           ),
