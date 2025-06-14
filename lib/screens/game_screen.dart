@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flame/game.dart';
 import '../providers/game_provider.dart';
 import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
-import '../providers/show_perimeter_provider.dart';
 
-class GameScreen extends ConsumerWidget {
-  const GameScreen({super.key});
+class GameScreen extends ConsumerStatefulWidget {
+  const GameScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends ConsumerState<GameScreen> {
+  bool showSettings = false;
+  bool showControls = false;
+
+  @override
+  Widget build(BuildContext context) {
     final game = ref.watch(gameProvider);
-    final showSettings = useState(false);
-    final showControls = useState(false);
 
     return Stack(
       children: [
@@ -30,8 +34,10 @@ class GameScreen extends ConsumerWidget {
                 backgroundColor: Colors.blueGrey,
                 child: const Icon(Icons.settings),
                 onPressed: () {
-                  showSettings.value = !showSettings.value;
-                  if (showSettings.value) showControls.value = false;
+                  setState(() {
+                    showSettings = !showSettings;
+                    if (showSettings) showControls = false;
+                  });
                 },
               ),
               const SizedBox(height: 12),
@@ -41,27 +47,29 @@ class GameScreen extends ConsumerWidget {
                 backgroundColor: Colors.orange,
                 child: const Icon(Icons.sports_esports),
                 onPressed: () {
-                  showControls.value = !showControls.value;
-                  if (showControls.value) showSettings.value = false;
+                  setState(() {
+                    showControls = !showControls;
+                    if (showControls) showSettings = false;
+                  });
                 },
               ),
             ],
           ),
         ),
-        if (showSettings.value)
+        if (showSettings)
           Positioned(
             left: 12,
             right: 12,
             bottom: 0,
-            child:
-                IslandSettingsPanel(onClose: () => showSettings.value = false),
+            child: IslandSettingsPanel(
+                onClose: () => setState(() => showSettings = false)),
           ),
-        if (showControls.value)
+        if (showControls)
           Positioned(
             right: 12,
             bottom: 24,
             child: GameControlsPanel(
-              onClose: () => showControls.value = false,
+              onClose: () => setState(() => showControls = false),
             ),
           ),
       ],
