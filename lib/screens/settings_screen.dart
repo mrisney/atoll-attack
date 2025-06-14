@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Future expansion: app-level settings
 class SettingsScreen extends StatelessWidget {

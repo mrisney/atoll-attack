@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:riverpod/riverpod.dart';
 import '../providers/island_settings_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class IslandSettingsPanel extends ConsumerWidget {
   final VoidCallback? onClose;
