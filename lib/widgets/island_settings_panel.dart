@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/island_settings_provider.dart';
 
 class IslandSettingsPanel extends ConsumerWidget {
-  const IslandSettingsPanel({super.key});
+  final VoidCallback? onClose;
+  const IslandSettingsPanel({Key? key, this.onClose}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -22,7 +23,7 @@ class IslandSettingsPanel extends ConsumerWidget {
               alignment: Alignment.topRight,
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white70),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: onClose,
               ),
             ),
             _buildSlider(
@@ -77,7 +78,7 @@ class IslandSettingsPanel extends ConsumerWidget {
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: () => notifier.randomizeSeed(),
+                      onPressed: notifier.randomizeSeed,
                       child: const Icon(Icons.refresh, size: 18),
                     ),
                   ],

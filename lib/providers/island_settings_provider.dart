@@ -1,17 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/island_settings.dart';
+import '../config.dart'; // Import your config file
 
 class IslandSettingsNotifier extends StateNotifier<IslandSettings> {
   IslandSettingsNotifier()
       : super(const IslandSettings(
-          amplitude: 1.2,
-          wavelength: 0.22,
-          bias: -0.4,
-          islandRadius: 0.65,
-          seed: 12345,
+          amplitude: kDefaultAmplitude,
+          wavelength: kDefaultWavelength,
+          bias: kDefaultBias,
+          islandRadius: kDefaultIslandRadius,
+          seed: kDefaultSeed,
         ));
-
-  void update(IslandSettings newSettings) => state = newSettings;
 
   void setAmplitude(double value) => state = state.copyWith(amplitude: value);
   void setWavelength(double value) => state = state.copyWith(wavelength: value);

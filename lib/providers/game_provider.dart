@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flame/game.dart';
+import 'package:flame/components.dart'; // for Vector2
 import '../models/island_settings.dart';
 import '../game/island_game.dart';
+import 'show_perimeter_provider.dart';
 
 final gameProvider = Provider<IslandGame>((ref) {
   final settings = ref.watch(islandSettingsProvider);
