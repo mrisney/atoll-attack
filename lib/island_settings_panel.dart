@@ -1,0 +1,167 @@
+import 'package:flutter/material.dart';
+
+class IslandSettingsPanel extends StatelessWidget {
+  final double amplitude;
+  final double wavelength;
+  final double bias;
+  final double islandRadius;
+  final int seed;
+  final ValueChanged<double> onAmplitudeChanged;
+  final ValueChanged<double> onWavelengthChanged;
+  final ValueChanged<double> onBiasChanged;
+  final ValueChanged<double> onIslandRadiusChanged;
+  final ValueChanged<int> onSeedChanged;
+  final VoidCallback onRandomize;
+  final VoidCallback onClose;
+
+  const IslandSettingsPanel({
+    Key? key,
+    required this.amplitude,
+    required this.wavelength,
+    required this.bias,
+    required this.islandRadius,
+    required this.seed,
+    required this.onAmplitudeChanged,
+    required this.onWavelengthChanged,
+    required this.onBiasChanged,
+    required this.onIslandRadiusChanged,
+    required this.onSeedChanged,
+    required this.onRandomize,
+    required this.onClose,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.black.withOpacity(0.96),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Close button
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white70),
+                onPressed: onClose,
+              ),
+            ),
+            _buildSlider(
+                context, 'Amplitude', amplitude, 1.0, 2.0, onAmplitudeChanged),
+            _buildSlider(context, 'Wavelength', wavelength, 0.15, 0.7,
+                onWavelengthChanged),
+            _buildSlider(context, 'Bias', bias, -1.0, 0.2, onBiasChanged),
+            _buildSlider(context, 'Island Size', islandRadius, 0.4, 1.2,
+                onIslandRadiusChanged),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Seed: $seed',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => onSeedChanged(
+                          DateTime.now().millisecondsSinceEpoch % 100000),
+                      child: const Icon(Icons.refresh, size: 18),
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: onRandomize,
+                      child: const Icon(Icons.shuffle, size: 18),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            // (Optional: Add profile/preset Save/Load buttons here)
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlider(
+    BuildContext context,
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.28),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: Colors.blue.withOpacity(0.38)),
+                ),
+                child: Text(
+                  value.toStringAsFixed(2),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Colors.blue.shade400,
+              inactiveTrackColor: Colors.blue.withOpacity(0.22),
+              thumbColor: Colors.blue.shade300,
+              overlayColor: Colors.blue.withOpacity(0.13),
+              trackHeight: 3.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+            ),
+            child: Slider(
+              value: value,
+              min: min,
+              max: max,
+              divisions: 100,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
