@@ -1,7 +1,9 @@
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
-import 'package:flame/input.dart';
+import 'package:flame/events.dart';
+import 'package:flame/input.dart'; // Add this import for gesture detectors
 import 'package:flutter/material.dart';
+import 'dart:math' as math; // Add this import for Random
 import 'island_component.dart';
 import 'unit_component.dart';
 import '../models/unit_model.dart';
@@ -11,7 +13,6 @@ import '../rules/game_rules_engine.dart';
 import '../services/pathfinding_service.dart';
 import '../config.dart';
 import 'dart:ui';
-import 'dart:math' as math;
 
 class IslandGame extends FlameGame
     with HasCollisionDetection, TapDetector, PanDetector {
@@ -429,6 +430,10 @@ class IslandGame extends FlameGame
 
   List<UnitComponent> get selectedUnits => _selectedUnits;
 
+  // Add getter for selectedUnit (for compatibility with game_screen.dart)
+  UnitComponent? get selectedUnit =>
+      _selectedUnits.isNotEmpty ? _selectedUnits.first : null;
+
   void spawnSingleUnit(UnitType unitType, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
@@ -459,7 +464,7 @@ class IslandGame extends FlameGame
       return;
     }
 
-    final rng = Random();
+    final rng = math.Random(); // Fixed Random import
     int attempts = 0;
 
     final coastline = _island.getCoastline();
@@ -468,9 +473,18 @@ class IslandGame extends FlameGame
     final apex = getIslandApex();
     if (apex == null) return;
 
-    while (attempts < 50) {
+    while (attempts < 100) {
+      // Increased attempts
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
-      final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+      Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+
+      // Try to spawn slightly inland from coastline for better movement
+      if (apex != null) {
+        Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
+        toApex.normalize();
+        // Move 10-20 pixels inland
+        unitPosition += toApex.scaled(10 + rng.nextDouble() * 10);
+      }
 
       if (_island.isOnLand(unitPosition)) {
         Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
@@ -481,9 +495,12 @@ class IslandGame extends FlameGame
           type: unitType,
           position: unitPosition,
           team: team,
-          velocity: toApex.scaled(12.0), // Increased initial velocity
+          velocity: toApex.scaled(15.0), // Initial velocity toward apex
           isOnLandCallback: isOnLand,
         );
+
+        // Set the target to apex immediately
+        unitModel.targetPosition = Vector2(apex.dx, apex.dy);
 
         final unitComponent = UnitComponent(model: unitModel);
         add(unitComponent);
@@ -510,7 +527,7 @@ class IslandGame extends FlameGame
         }
 
         debugPrint(
-            'Spawned ${unitType.name} for ${team.name} team. Remaining: ${_getRemainingForType(team, unitType)}');
+            'Spawned ${unitType.name} for ${team.name} team at $unitPosition. Remaining: ${_getRemainingForType(team, unitType)}');
         return;
       }
       attempts++;
@@ -541,7 +558,7 @@ class IslandGame extends FlameGame
     }
   }
 
-  // Drag selection implementation
+  // Drag selection implementation with correct event types
   @override
   void onPanStart(DragStartInfo info) {
     _selectionStart = info.eventPosition.global;
@@ -580,12 +597,12 @@ class IslandGame extends FlameGame
   }
 
   @override
-  void onTap() {
+  bool onTapDown(TapDownInfo info) {
     // Handle tap for spawning units if no selection is active
     if (_selectedUnits.isEmpty) {
-      final touchPosition = camera.viewfinder.position;
-      spawnUnitsAtPosition(touchPosition);
+      spawnUnitsAtPosition(info.eventPosition.global);
     }
+    return true;
   }
 
   void spawnUnitsAtPosition(Vector2 position) {
@@ -598,7 +615,7 @@ class IslandGame extends FlameGame
   void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
-    final rng = Random();
+    final rng = math.Random(); // Fixed Random import
     int attempts = 0, spawned = 0;
     final int maxUnits = 2;
     bool hasCaptain = _units
@@ -610,9 +627,16 @@ class IslandGame extends FlameGame
     final apex = getIslandApex();
     if (apex == null) return;
 
-    while (spawned < maxUnits && attempts < maxUnits * 20) {
+    while (spawned < maxUnits && attempts < maxUnits * 30) {
+      // More attempts
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
-      final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+      Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+
+      // Try to spawn slightly inland for better movement
+      Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
+      toApex.normalize();
+      // Move 15-25 pixels inland from coastline
+      unitPosition += toApex.scaled(15 + rng.nextDouble() * 10);
 
       if (_island.isOnLand(unitPosition)) {
         UnitType unitType;
@@ -641,17 +665,17 @@ class IslandGame extends FlameGame
           }
         }
 
-        Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
-        toApex.normalize();
-
         final unitModel = UnitModel(
           id: 'unit_${DateTime.now().millisecondsSinceEpoch}_$spawned',
           type: unitType,
           position: unitPosition,
           team: team,
-          velocity: toApex.scaled(12.0), // Increased velocity
+          velocity: toApex.scaled(15.0), // Good initial velocity
           isOnLandCallback: isOnLand,
         );
+
+        // Immediately set target to apex
+        unitModel.targetPosition = Vector2(apex.dx, apex.dy);
 
         final unitComponent = UnitComponent(model: unitModel);
         add(unitComponent);
