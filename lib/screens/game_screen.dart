@@ -242,6 +242,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   if (showSelectedUnitsPanel)
                     SelectedUnitsPanel(
                       unitsInfo: game.getSelectedUnitsInfo(),
+                      onClose: () {
+                        final game = ref.read(gameProvider);
+                        game.clearSelection();
+                        setState(() {});
+                      },
                     ),
                 ],
               ),
@@ -255,20 +260,75 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       final stats = gameStats as Map<String, dynamic>;
       return Column(
         children: [
-          GameHUD(
-            blueUnits: stats['blueUnits'] ?? 0,
-            redUnits: stats['redUnits'] ?? 0,
-            blueHealthPercent: stats['blueHealth'] ?? 0.0,
-            redHealthPercent: stats['redHealth'] ?? 0.0,
-            isVisible: showHUD,
-            onToggleVisibility: () => setState(() => showHUD = !showHUD),
-            selectedUnit: null, // We're not using this anymore
-            blueUnitsRemaining: stats['blueRemaining'] ?? 0,
-            redUnitsRemaining: stats['redRemaining'] ?? 0,
-            showPerimeter: showPerimeter,
-            onPerimeterToggle: (value) {
-              ref.read(showPerimeterProvider.notifier).state = value;
-            },
+          Column(
+            children: [
+              GameHUD(
+                blueUnits: stats['blueUnits'] ?? 0,
+                redUnits: stats['redUnits'] ?? 0,
+                blueHealthPercent: stats['blueHealth'] ?? 0.0,
+                redHealthPercent: stats['redHealth'] ?? 0.0,
+                isVisible: showHUD,
+                onToggleVisibility: () => setState(() => showHUD = !showHUD),
+                selectedUnit: null, // We're not using this anymore
+                blueUnitsRemaining: stats['blueRemaining'] ?? 0,
+                redUnitsRemaining: stats['redRemaining'] ?? 0,
+                showPerimeter: showPerimeter,
+                onPerimeterToggle: (value) {
+                  ref.read(showPerimeterProvider.notifier).state = value;
+                },
+              ),
+              const SizedBox(height: 8),
+              // Zoom controls
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.zoom_in, color: Colors.white, size: 20),
+                          onPressed: () {
+                            final game = ref.read(gameProvider);
+                            game.zoomIn();
+                            setState(() {});
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          icon: const Icon(Icons.zoom_out_map, color: Colors.white, size: 20),
+                          onPressed: () {
+                            final game = ref.read(gameProvider);
+                            game.resetZoom();
+                            setState(() {});
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          icon: const Icon(Icons.zoom_out, color: Colors.white, size: 20),
+                          onPressed: () {
+                            final game = ref.read(gameProvider);
+                            game.zoomOut();
+                            setState(() {});
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           // Add the selected units panel with toggle button
@@ -285,21 +345,42 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                         fontSize: 12,
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        showSelectedUnitsPanel ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      onPressed: () => setState(() => showSelectedUnitsPanel = !showSelectedUnitsPanel),
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            showSelectedUnitsPanel ? Icons.visibility_off : Icons.visibility,
+                            color: Colors.white70,
+                            size: 16,
+                          ),
+                          onPressed: () => setState(() => showSelectedUnitsPanel = !showSelectedUnitsPanel),
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70, size: 16),
+                          onPressed: () {
+                            final game = ref.read(gameProvider);
+                            game.clearSelection();
+                            setState(() {});
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
                     ),
                   ],
                 ),
                 if (showSelectedUnitsPanel)
                   SelectedUnitsPanel(
                     unitsInfo: game.getSelectedUnitsInfo(),
+                    onClose: () {
+                      final game = ref.read(gameProvider);
+                      game.clearSelection();
+                      setState(() {});
+                    },
                   ),
               ],
             ),

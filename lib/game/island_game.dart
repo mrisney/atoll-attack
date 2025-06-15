@@ -21,6 +21,11 @@ class IslandGame extends FlameGame
   Vector2 gameSize;
   double islandRadius;
   bool showPerimeter;
+  
+  // Simple zoom properties
+  double zoomLevel = 1.0;
+  final double minZoom = 0.5;
+  final double maxZoom = 2.0;
 
   late IslandComponent _island;
   bool _isLoaded = false;
@@ -210,6 +215,10 @@ class IslandGame extends FlameGame
 
   @override
   void render(Canvas canvas) {
+    // Apply zoom transformation
+    canvas.save();
+    canvas.scale(zoomLevel);
+    
     super.render(canvas);
 
     // Draw selection box
@@ -222,6 +231,9 @@ class IslandGame extends FlameGame
       canvas.drawRect(rect, _selectionPaint);
       canvas.drawRect(rect, _selectionBorderPaint);
     }
+    
+    // Restore canvas
+    canvas.restore();
     
     // Draw destination marker
     if (_destinationMarker != null) {
@@ -346,11 +358,20 @@ class IslandGame extends FlameGame
     return false;
   }
 
-  void _clearSelection() {
+  void clearSelection() {
     for (final unit in _selectedUnits) {
       unit.setSelected(false);
     }
     _selectedUnits.clear();
+    
+    // Notify UI of the change
+    if (onUnitCountsChanged != null) {
+      onUnitCountsChanged!();
+    }
+  }
+  
+  void _clearSelection() {
+    clearSelection();
   }
 
   void _selectUnitsInBox(Vector2 start, Vector2 end) {
@@ -410,11 +431,12 @@ class IslandGame extends FlameGame
       // Always allow movement regardless of land check
       // Use the setTargetPosition method to properly handle redirection
       unit.setTargetPosition(target);
-      // Deselect the unit after setting its target
-      unit.setSelected(false);
       debugPrint(
           'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
     }
+    
+    // Don't automatically clear selection to allow for multiple commands
+    // The selection state will be reset in onTapDown when needed
   }
 
   void checkVictoryConditions() {
@@ -750,7 +772,11 @@ class IslandGame extends FlameGame
   // Drag selection implementation with correct event types
   @override
   void onPanStart(DragStartInfo info) {
-    _selectionStart = info.eventPosition.global;
+    // Apply zoom transformation manually
+    _selectionStart = Vector2(
+      info.eventPosition.global.x / zoomLevel,
+      info.eventPosition.global.y / zoomLevel
+    );
     _selectionEnd = _selectionStart;
     _isDragging = true;
   }
@@ -758,7 +784,11 @@ class IslandGame extends FlameGame
   @override
   void onPanUpdate(DragUpdateInfo info) {
     if (_isDragging) {
-      _selectionEnd = info.eventPosition.global;
+      // Apply zoom transformation manually
+      _selectionEnd = Vector2(
+        info.eventPosition.global.x / zoomLevel,
+        info.eventPosition.global.y / zoomLevel
+      );
     }
   }
 
@@ -786,6 +816,25 @@ class IslandGame extends FlameGame
     _selectionStart = null;
     _selectionEnd = null;
   }
+  
+  // Simple zoom methods
+  void zoomIn() {
+    if (zoomLevel < maxZoom) {
+      zoomLevel += 0.25;
+      if (zoomLevel > maxZoom) zoomLevel = maxZoom;
+    }
+  }
+  
+  void zoomOut() {
+    if (zoomLevel > minZoom) {
+      zoomLevel -= 0.25;
+      if (zoomLevel < minZoom) zoomLevel = minZoom;
+    }
+  }
+  
+  void resetZoom() {
+    zoomLevel = 1.0;
+  }
 
   // Store last tap position for unit info
   Vector2 _lastTapPosition = Vector2.zero();
@@ -794,8 +843,14 @@ class IslandGame extends FlameGame
   bool onTapDown(TapDownInfo info) {
     _lastTapPosition = info.eventPosition.global;
     
+    // Apply zoom transformation manually
+    Vector2 worldPos = Vector2(
+      _lastTapPosition.x / zoomLevel,
+      _lastTapPosition.y / zoomLevel
+    );
+    
     // Check if we tapped on a unit first
-    final tappedUnit = _findUnitAtPosition(_lastTapPosition);
+    final tappedUnit = _findUnitAtPosition(worldPos);
     if (tappedUnit != null) {
       // Show unit information
       tappedUnit.showUnitInfo();
@@ -810,9 +865,13 @@ class IslandGame extends FlameGame
     
     // If units are selected, move them to the tapped position
     if (_selectedUnits.isNotEmpty) {
-      _moveSelectedUnits(_lastTapPosition);
-      // Don't clear selection immediately to allow the destination marker to show
-      // The selection will be cleared after the unit starts moving
+      _moveSelectedUnits(worldPos);
+      // Reset selection state after giving movement command
+      // This allows the player to select other units immediately
+    } else {
+      // If no units are selected and we didn't tap on a unit,
+      // ensure selection state is cleared
+      _clearSelection();
     }
     return true;
   }

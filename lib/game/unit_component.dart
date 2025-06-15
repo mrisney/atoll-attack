@@ -577,12 +577,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     // Don't use pathfinding - let units move irregularly
     model.path = null;
     
-    // Deselect the unit after a short delay to allow destination marker to show
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (model.isSelected) {
-        model.isSelected = false;
-      }
-    });
+    // We no longer auto-deselect units to allow for multiple commands
   }
 
   bool containsPoint(Vector2 point) {
