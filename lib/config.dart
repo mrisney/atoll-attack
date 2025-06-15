@@ -10,16 +10,20 @@ const int kDefaultSeed = 12345;
 // Default game size (you can override with MediaQuery if needed)
 final Vector2 kDefaultGameSize = Vector2(400, 900);
 
-// Game control defaults
-const int kDefaultUnitSpawnCount = 12;
-
 // Total units per team
 const int kTotalUnitsPerTeam = 25;
 
 // Unit limits per team (captain is still limited to 1)
 const int kMaxCaptainsPerTeam = 1;
-const int kMaxArchersPerTeam = kTotalUnitsPerTeam - 1; // Allow all units to be archers except captain
-const int kMaxSwordsmenPerTeam = kTotalUnitsPerTeam - 1; // Allow all units to be swordsmen except captain
+const int kMaxArchersPerTeam =
+    kTotalUnitsPerTeam - 1; // Allow all units to be archers except captain
+const int kMaxSwordsmenPerTeam =
+    kTotalUnitsPerTeam - 1; // Allow all units to be swordsmen except captain
+
+// Unit speed settings
+const double kCaptainSpeed = 5.0; // Slower captain speed
+const double kArcherSpeed = 12.0;
+const double kSwordsmanSpeed = 10.0;
 
 // Game balance settings
 const double kRulesUpdateInterval = 0.1; // Update rules 10 times per second

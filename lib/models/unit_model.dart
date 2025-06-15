@@ -5,6 +5,7 @@ import 'package:flame_forge2d/flame_forge2d.dart';
 import 'package:flutter/material.dart';
 import 'package:a_star/a_star.dart';
 import '../rules/combat_rules.dart';
+import '../config.dart';
 
 enum UnitType {
   captain,
@@ -82,8 +83,8 @@ class UnitModel {
     defense = type == UnitType.swordsman ? 10.0 : 3.0,
     health = type == UnitType.swordsman ? 100.0 : (type == UnitType.captain ? 60.0 : 80.0),
     maxHealth = type == UnitType.swordsman ? 100.0 : (type == UnitType.captain ? 60.0 : 80.0),
-    // Set movement properties with type-specific defaults (much slower speeds)
-    maxSpeed = maxSpeed ?? (type == UnitType.captain ? 15.0 : (type == UnitType.archer ? 12.0 : 10.0)),
+    // Set movement properties with type-specific defaults from config
+    maxSpeed = maxSpeed ?? (type == UnitType.captain ? kCaptainSpeed : (type == UnitType.archer ? kArcherSpeed : kSwordsmanSpeed)),
     maxForce = maxForce ?? 100.0,
     mass = mass ?? (type == UnitType.swordsman ? 1.5 : 1.0),
     radius = radius ?? (type == UnitType.swordsman ? 8.0 : (type == UnitType.captain ? 6.0 : 7.0)),
@@ -106,9 +107,13 @@ class UnitModel {
     if (type != UnitType.captain || apex == null) return false;
     
     double distance = position.distanceTo(Vector2(apex.dx, apex.dy));
-    if (distance < radius * 2) {
-      hasPlantedFlag = true;
-      return true;
+    // Make it harder for captain to plant flag - must be closer to apex
+    if (distance < radius * 1.5) {
+      // Captain needs to stay at apex for a moment before planting flag
+      if (velocity.length < 1.0) {
+        hasPlantedFlag = true;
+        return true;
+      }
     }
     return false;
   }

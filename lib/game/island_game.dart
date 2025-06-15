@@ -7,9 +7,7 @@ import 'dart:math' as math;
 import 'island_component.dart';
 import 'unit_component.dart';
 import '../models/unit_model.dart';
-import '../rules/victory_conditions.dart';
-import '../rules/combat_rules.dart';
-import '../rules/game_rules_engine.dart';
+import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
 import '../config.dart';
 import 'dart:ui';
@@ -47,6 +45,10 @@ class IslandGame extends FlameGame
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
   static const double _rulesUpdateInterval = kRulesUpdateInterval;
+  
+  // Track actual units remaining for each team
+  int _blueUnitsRemaining = kTotalUnitsPerTeam;
+  int _redUnitsRemaining = kTotalUnitsPerTeam;
 
   // Callback to notify providers when unit counts change
   void Function()? onUnitCountsChanged;
@@ -90,6 +92,11 @@ class IslandGame extends FlameGame
     );
     _island.position = gameSize / 2;
     add(_island);
+    
+    // Reset game rules
+    GameRules.resetGame();
+    _blueUnitsRemaining = kTotalUnitsPerTeam;
+    _redUnitsRemaining = kTotalUnitsPerTeam;
 
     _isLoaded = true;
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
@@ -291,6 +298,8 @@ class IslandGame extends FlameGame
       if (isOnLand(target)) {
         // Use the setTargetPosition method to properly handle redirection
         unit.setTargetPosition(target);
+        // Deselect the unit after setting its target
+        unit.setSelected(false);
         debugPrint(
             'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
       }
@@ -299,11 +308,18 @@ class IslandGame extends FlameGame
 
   void checkVictoryConditions() {
     final unitModels = _units.map((u) => u.model).toList();
-    final winningTeam = VictoryConditions.getWinningTeam(unitModels);
-
-    if (winningTeam != null) {
+    final victoryState = GameRules.checkVictoryConditions(unitModels, unitModels);
+    
+    if (victoryState.hasWinner) {
       _victoryAchieved = true;
-      debugPrint('${winningTeam == Team.blue ? "Blue" : "Red"} team wins!');
+      final team = victoryState.winner == Team.blue ? "Blue" : "Red";
+      final reason = switch (victoryState.reason) {
+        VictoryReason.flagCapture => "flag capture at apex",
+        VictoryReason.elimination => "elimination of all enemy units",
+        VictoryReason.captainElimination => "elimination of enemy captain",
+        _ => "victory",
+      };
+      debugPrint('$team team wins by $reason!');
     }
   }
 
@@ -314,10 +330,14 @@ class IslandGame extends FlameGame
       _lastRulesUpdate = 0.0;
 
       final unitModels = _units.map((u) => u.model).toList();
-      _currentGameState = GameRulesEngine.processRules(
+      _currentGameState = GameRules.processRules(
         unitModels,
         apex: getIslandApex(),
       );
+      
+      // Update our remaining unit counts from the game state
+      _blueUnitsRemaining = _currentGameState.blueUnitsRemaining;
+      _redUnitsRemaining = _currentGameState.redUnitsRemaining;
 
       bool unitsRemoved = false;
       for (final unitId in _currentGameState.unitsToRemove) {
@@ -363,6 +383,7 @@ class IslandGame extends FlameGame
   }
 
   void _decrementUnitCount(Team team, UnitType type) {
+    // Decrement specific unit type count
     if (team == Team.blue) {
       switch (type) {
         case UnitType.captain:
@@ -375,6 +396,10 @@ class IslandGame extends FlameGame
           _blueSwordsmenSpawned =
               (_blueSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
       }
+      
+      // Decrement total units remaining
+      GameRules.decrementUnitsRemaining(team);
+      _blueUnitsRemaining = GameRules.getUnitsRemaining(team);
     } else {
       switch (type) {
         case UnitType.captain:
@@ -387,6 +412,10 @@ class IslandGame extends FlameGame
           _redSwordsmenSpawned =
               (_redSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
       }
+      
+      // Decrement total units remaining
+      GameRules.decrementUnitsRemaining(team);
+      _redUnitsRemaining = GameRules.getUnitsRemaining(team);
     }
 
     // Force refresh after decrementing
@@ -443,8 +472,8 @@ class IslandGame extends FlameGame
     return maxHealth > 0 ? totalHealth / maxHealth : 0.0;
   }
 
-  int get blueUnitsRemaining => kTotalUnitsPerTeam - blueUnitsSpawned;
-  int get redUnitsRemaining => kTotalUnitsPerTeam - redUnitsSpawned;
+  int get blueUnitsRemaining => _blueUnitsRemaining;
+  int get redUnitsRemaining => _redUnitsRemaining;
 
   int get blueCaptainsRemaining => maxCaptainsPerTeam - _blueCaptainsSpawned;
   int get blueArchersRemaining => maxArchersPerTeam - _blueArchersSpawned;
@@ -467,34 +496,33 @@ class IslandGame extends FlameGame
   void spawnSingleUnit(UnitType unitType, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
+    // Get all unit models for checking captain existence
+    final unitModels = _units.map((u) => u.model).toList();
+    
+    // Use GameRules to check if we can spawn this unit type
+    if (!GameRules.canSpawnMoreUnits(team)) {
+      debugPrint('${team.name} team has no more units remaining');
+      return;
+    }
+    
     bool canSpawn = false;
     if (team == Team.blue) {
-      // Check total units first
-      if (blueUnitsSpawned >= kTotalUnitsPerTeam) {
-        debugPrint('Blue team has reached maximum total units');
-        return;
-      }
-      
-      // Then check specific unit type limits
+      // Check specific unit type limits
       switch (unitType) {
         case UnitType.captain:
-          canSpawn = _blueCaptainsSpawned < maxCaptainsPerTeam;
+          canSpawn = _blueCaptainsSpawned < maxCaptainsPerTeam && 
+                     !GameRules.hasCaptain(team, unitModels);
         case UnitType.archer:
           canSpawn = _blueArchersSpawned < maxArchersPerTeam;
         case UnitType.swordsman:
           canSpawn = _blueSwordsmenSpawned < maxSwordsmenPerTeam;
       }
     } else {
-      // Check total units first
-      if (redUnitsSpawned >= kTotalUnitsPerTeam) {
-        debugPrint('Red team has reached maximum total units');
-        return;
-      }
-      
-      // Then check specific unit type limits
+      // Check specific unit type limits
       switch (unitType) {
         case UnitType.captain:
-          canSpawn = _redCaptainsSpawned < maxCaptainsPerTeam;
+          canSpawn = _redCaptainsSpawned < maxCaptainsPerTeam && 
+                     !GameRules.hasCaptain(team, unitModels);
         case UnitType.archer:
           canSpawn = _redArchersSpawned < maxArchersPerTeam;
         case UnitType.swordsman:
@@ -634,10 +662,10 @@ class IslandGame extends FlameGame
         // Single click - check if we have selected units first
         if (_selectedUnits.isNotEmpty) {
           _moveSelectedUnits(_selectionStart!);
-        } else {
-          // No selection, spawn units
-          spawnUnitsAtPosition(_selectionStart!);
+          // Clear selection after moving units
+          _clearSelection();
         }
+        // Removed automatic unit spawning on click
       }
     }
 
@@ -651,10 +679,10 @@ class IslandGame extends FlameGame
     // If units are selected, move them to the tapped position
     if (_selectedUnits.isNotEmpty) {
       _moveSelectedUnits(info.eventPosition.global);
-    } else {
-      // No selection, spawn units
-      spawnUnitsAtPosition(info.eventPosition.global);
+      // Clear selection after moving units
+      _clearSelection();
     }
+    // Removed automatic unit spawning on tap
     return true;
   }
 
