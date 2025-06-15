@@ -1,3 +1,4 @@
+import 'dart:ui'; // Add this import for Offset type
 import '../models/unit_model.dart';
 
 /// Simple rule-based system for game logic
