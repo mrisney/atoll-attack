@@ -13,14 +13,13 @@ final Vector2 kDefaultGameSize = Vector2(400, 900);
 // Game control defaults
 const int kDefaultUnitSpawnCount = 12;
 
-// Unit limits per team
-const int kMaxCaptainsPerTeam = 1;
-const int kMaxArchersPerTeam = 12;
-const int kMaxSwordsmenPerTeam = 12;
-
 // Total units per team
-const int kTotalUnitsPerTeam =
-    kMaxCaptainsPerTeam + kMaxArchersPerTeam + kMaxSwordsmenPerTeam;
+const int kTotalUnitsPerTeam = 25;
+
+// Unit limits per team (captain is still limited to 1)
+const int kMaxCaptainsPerTeam = 1;
+const int kMaxArchersPerTeam = kTotalUnitsPerTeam - 1; // Allow all units to be archers except captain
+const int kMaxSwordsmenPerTeam = kTotalUnitsPerTeam - 1; // Allow all units to be swordsmen except captain
 
 // Game balance settings
 const double kRulesUpdateInterval = 0.1; // Update rules 10 times per second

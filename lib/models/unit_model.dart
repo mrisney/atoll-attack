@@ -151,32 +151,19 @@ class UnitModel {
     // Determine movement target
     Vector2? moveTarget;
     
-    // If unit has a specific target position and is selected, prioritize that
-    if (isSelected && targetPosition != position) {
+    // If unit has a specific target position, prioritize that
+    if (targetPosition != position) {
       moveTarget = targetPosition;
-    } 
-    // If allies exist and not too close to apex, flock toward allies first
-    else if (allies.isNotEmpty && apex != null && !hasPlantedFlag) {
-      // Check distance to apex
-      Vector2 apexPos = Vector2(apex.dx, apex.dy);
-      double distToApex = position.distanceTo(apexPos);
       
-      // If far from apex, prioritize flocking
-      if (distToApex > 50.0) {
-        // Calculate center of allies
-        Vector2 center = Vector2.zero();
-        for (final ally in allies) {
-          center += ally.position;
-        }
-        center.scale(1.0 / allies.length);
-        
-        // Move toward center of allies
-        moveTarget = center;
-      } else {
-        // Close to apex, prioritize reaching it
-        moveTarget = apexPos;
+      // Check if we're close enough to the target to stop
+      double distToTarget = position.distanceTo(targetPosition);
+      if (distToTarget < radius * 2) {
+        // We've reached the target, stop moving
+        velocity = Vector2.zero();
+        state = UnitState.idle;
+        return; // Skip the rest of the update
       }
-    }
+    } 
     // Otherwise move toward apex if not at flag
     else if (apex != null && !hasPlantedFlag) {
       moveTarget = Vector2(apex.dx, apex.dy);

@@ -443,14 +443,8 @@ class IslandGame extends FlameGame
     return maxHealth > 0 ? totalHealth / maxHealth : 0.0;
   }
 
-  int get blueUnitsRemaining =>
-      (maxCaptainsPerTeam - _blueCaptainsSpawned) +
-      (maxArchersPerTeam - _blueArchersSpawned) +
-      (maxSwordsmenPerTeam - _blueSwordsmenSpawned);
-  int get redUnitsRemaining =>
-      (maxCaptainsPerTeam - _redCaptainsSpawned) +
-      (maxArchersPerTeam - _redArchersSpawned) +
-      (maxSwordsmenPerTeam - _redSwordsmenSpawned);
+  int get blueUnitsRemaining => kTotalUnitsPerTeam - blueUnitsSpawned;
+  int get redUnitsRemaining => kTotalUnitsPerTeam - redUnitsSpawned;
 
   int get blueCaptainsRemaining => maxCaptainsPerTeam - _blueCaptainsSpawned;
   int get blueArchersRemaining => maxArchersPerTeam - _blueArchersSpawned;
@@ -475,6 +469,13 @@ class IslandGame extends FlameGame
 
     bool canSpawn = false;
     if (team == Team.blue) {
+      // Check total units first
+      if (blueUnitsSpawned >= kTotalUnitsPerTeam) {
+        debugPrint('Blue team has reached maximum total units');
+        return;
+      }
+      
+      // Then check specific unit type limits
       switch (unitType) {
         case UnitType.captain:
           canSpawn = _blueCaptainsSpawned < maxCaptainsPerTeam;
@@ -484,6 +485,13 @@ class IslandGame extends FlameGame
           canSpawn = _blueSwordsmenSpawned < maxSwordsmenPerTeam;
       }
     } else {
+      // Check total units first
+      if (redUnitsSpawned >= kTotalUnitsPerTeam) {
+        debugPrint('Red team has reached maximum total units');
+        return;
+      }
+      
+      // Then check specific unit type limits
       switch (unitType) {
         case UnitType.captain:
           canSpawn = _redCaptainsSpawned < maxCaptainsPerTeam;
@@ -672,8 +680,15 @@ class IslandGame extends FlameGame
 
     final apex = getIslandApex();
     if (apex == null) return;
+    
+    // Check if team has reached total unit limit
+    int unitsRemaining = team == Team.blue ? blueUnitsRemaining : redUnitsRemaining;
+    if (unitsRemaining <= 0) {
+      debugPrint('${team.name} team has reached maximum total units');
+      return;
+    }
 
-    while (spawned < maxUnits && attempts < maxUnits * 30) {
+    while (spawned < maxUnits && spawned < unitsRemaining && attempts < maxUnits * 30) {
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
 
@@ -692,22 +707,23 @@ class IslandGame extends FlameGame
           unitType = UnitType.captain;
           hasCaptain = true;
         } else {
-          bool canSpawnArcher = team == Team.blue
-              ? blueArchersRemaining > 0
-              : redArchersRemaining > 0;
-          bool canSpawnSwordsman = team == Team.blue
-              ? blueSwordsmenRemaining > 0
-              : redSwordsmenRemaining > 0;
-
-          if (canSpawnArcher && canSpawnSwordsman) {
-            unitType = rng.nextBool() ? UnitType.swordsman : UnitType.archer;
-          } else if (canSpawnArcher) {
-            unitType = UnitType.archer;
-          } else if (canSpawnSwordsman) {
-            unitType = UnitType.swordsman;
+          // Allow flexible unit type selection based on what's available
+          List<UnitType> availableTypes = [];
+          
+          if (team == Team.blue) {
+            if (_blueArchersSpawned < maxArchersPerTeam) availableTypes.add(UnitType.archer);
+            if (_blueSwordsmenSpawned < maxSwordsmenPerTeam) availableTypes.add(UnitType.swordsman);
           } else {
+            if (_redArchersSpawned < maxArchersPerTeam) availableTypes.add(UnitType.archer);
+            if (_redSwordsmenSpawned < maxSwordsmenPerTeam) availableTypes.add(UnitType.swordsman);
+          }
+          
+          if (availableTypes.isEmpty) {
             break;
           }
+          
+          // Randomly select from available types
+          unitType = availableTypes[rng.nextInt(availableTypes.length)];
         }
 
         final unitModel = UnitModel(
