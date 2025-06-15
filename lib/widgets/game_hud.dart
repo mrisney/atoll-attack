@@ -8,6 +8,9 @@ class GameHUD extends StatelessWidget {
   final double redHealthPercent;
   final bool isVisible;
   final VoidCallback? onToggleVisibility;
+  final UnitModel? selectedUnit;
+  final int blueUnitsRemaining;
+  final int redUnitsRemaining;
 
   const GameHUD({
     Key? key,
@@ -17,6 +20,9 @@ class GameHUD extends StatelessWidget {
     required this.redHealthPercent,
     required this.isVisible,
     this.onToggleVisibility,
+    this.selectedUnit,
+    required this.blueUnitsRemaining,
+    required this.redUnitsRemaining,
   }) : super(key: key);
 
   @override
@@ -39,64 +45,83 @@ class GameHUD extends StatelessWidget {
       top: 50,
       left: 16,
       right: 16,
-      child: Card(
-        color: Colors.black.withOpacity(0.85),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          // Main battle status card
+          Card(
+            color: Colors.black.withOpacity(0.7), // More transparent
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Battle Status',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Battle Status',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close,
+                            color: Colors.white70, size: 20),
+                        onPressed: onToggleVisibility,
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white70, size: 20),
-                    onPressed: onToggleVisibility,
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTeamStatus(
+                          'Blue Team',
+                          blueUnits,
+                          blueHealthPercent,
+                          Colors.blue,
+                          blueUnitsRemaining,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildTeamStatus(
+                          'Red Team',
+                          redUnits,
+                          redHealthPercent,
+                          Colors.red,
+                          redUnitsRemaining,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildTeamStatus(
-                      'Blue Team',
-                      blueUnits,
-                      blueHealthPercent,
-                      Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildTeamStatus(
-                      'Red Team',
-                      redUnits,
-                      redHealthPercent,
-                      Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+
+          // Selected unit info card
+          if (selectedUnit != null) ...[
+            const SizedBox(height: 8),
+            Card(
+              color: Colors.black.withOpacity(0.7), // More transparent
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: _buildSelectedUnitInfo(selectedUnit!),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildTeamStatus(
-      String teamName, int unitCount, double healthPercent, Color teamColor) {
+  Widget _buildTeamStatus(String teamName, int unitCount, double healthPercent,
+      Color teamColor, int unitsRemaining) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -123,10 +148,17 @@ class GameHUD extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Units: $unitCount',
+          'Active: $unitCount',
           style: const TextStyle(
             color: Colors.white70,
             fontSize: 12,
+          ),
+        ),
+        Text(
+          'Remaining: $unitsRemaining',
+          style: const TextStyle(
+            color: Colors.white60,
+            fontSize: 11,
           ),
         ),
         const SizedBox(height: 4),
@@ -173,6 +205,135 @@ class GameHUD extends StatelessWidget {
             ),
           ],
         ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedUnitInfo(UnitModel unit) {
+    String unitTypeName = switch (unit.type) {
+      UnitType.captain => 'Captain',
+      UnitType.swordsman => 'Swordsman',
+      UnitType.archer => 'Archer',
+    };
+
+    String unitTeamName = unit.team == Team.blue ? 'Blue' : 'Red';
+    Color teamColor = unit.team == Team.blue ? Colors.blue : Colors.red;
+    double healthPercent = unit.health / unit.maxHealth;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: teamColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$unitTeamName $unitTypeName',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            if (unit.hasPlantedFlag)
+              const Icon(
+                Icons.flag,
+                color: Colors.yellow,
+                size: 16,
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Text(
+              'Health: ',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+            Expanded(
+              child: Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: healthPercent.clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: healthPercent > 0.5
+                          ? Colors.green
+                          : healthPercent > 0.25
+                              ? Colors.orange
+                              : Colors.red,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${unit.health.round()}/${unit.maxHealth.round()}',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
+        if (unit.attackPower > 0) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Text(
+                'Attack: ',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                '${unit.attackPower.round()}',
+                style: const TextStyle(
+                  color: Colors.orange,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Defense: ',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                '${unit.defense.round()}',
+                style: const TextStyle(
+                  color: Colors.cyan,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

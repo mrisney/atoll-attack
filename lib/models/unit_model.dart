@@ -49,6 +49,9 @@ class UnitModel {
   bool hasPlantedFlag = false;
   Team team;
 
+  // Callback to check if position is on land
+  bool Function(Vector2)? isOnLandCallback;
+
   UnitModel({
     required this.id,
     required this.type,
@@ -64,6 +67,7 @@ class UnitModel {
     Color? color,
     this.isSelected = false,
     this.path,
+    this.isOnLandCallback,
   })  :
         // Set type-specific properties
         attackRange = type == UnitType.archer
@@ -245,9 +249,34 @@ class UnitModel {
       }
     }
 
-    // Apply movement with much slower speed
+    // Calculate potential new position
     Vector2 newPosition =
         position + velocity * dt * 0.8; // Reduced from 2.0 to 0.8
+
+    // Check if new position would be on land - if not, adjust
+    if (isOnLandCallback != null) {
+      if (!isOnLandCallback!(newPosition)) {
+        // Try to find a valid position by reducing movement
+        Vector2 reducedVelocity = velocity * 0.5;
+        Vector2 testPosition = position + reducedVelocity * dt * 0.8;
+
+        // If reduced movement is still invalid, stop movement
+        if (!isOnLandCallback!(testPosition)) {
+          velocity *= 0.1; // Almost stop
+          newPosition = position + velocity * dt * 0.1;
+
+          // Final check - if still invalid, don't move
+          if (!isOnLandCallback!(newPosition)) {
+            newPosition = position;
+            velocity = Vector2.zero();
+          }
+        } else {
+          newPosition = testPosition;
+          velocity = reducedVelocity;
+        }
+      }
+    }
+
     position = newPosition;
 
     // Check if captain reached apex
@@ -267,7 +296,12 @@ class UnitModel {
           math.sin(now) * 0.2, // Reduced movement
           math.cos(now) * 0.2,
         );
-        position += smallMovement * dt;
+        Vector2 swayPosition = position + smallMovement * dt;
+
+        // Only apply sway if it keeps captain on land
+        if (isOnLandCallback == null || isOnLandCallback!(swayPosition)) {
+          position = swayPosition;
+        }
       }
     }
   }

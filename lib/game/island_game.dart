@@ -27,6 +27,11 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   bool _victoryAchieved = false;
   bool useAssets = false; // Toggle for using artwork vs simple shapes
 
+  // Unit limit tracking
+  static const int maxUnitsPerTeam = 50;
+  int _blueUnitsSpawned = 0;
+  int _redUnitsSpawned = 0;
+
   // Rules engine properties
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
@@ -116,6 +121,9 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     if (_isLoaded && _island.isMounted) {
       _island.showPerimeter = showPerimeter;
     }
+
+    // Process game rules periodically
+    processGameRules();
   }
 
   double getElevationAt(Vector2 worldPosition) {
@@ -231,11 +239,19 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         apex: getIslandApex(),
       );
 
-      // Handle unit removal
+      // Handle unit removal - also update spawn counters
       for (final unitId in _currentGameState.unitsToRemove) {
         final unitToRemove =
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
+          // Decrease spawn counter when unit dies
+          if (unitToRemove.model.team == Team.blue) {
+            _blueUnitsSpawned =
+                (_blueUnitsSpawned - 1).clamp(0, maxUnitsPerTeam);
+          } else {
+            _redUnitsSpawned = (_redUnitsSpawned - 1).clamp(0, maxUnitsPerTeam);
+          }
+
           unitToRemove.removeFromParent();
           _units.remove(unitToRemove);
         }
@@ -266,14 +282,88 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   double get blueHealthPercent => _currentGameState.blueHealthPercent;
   double get redHealthPercent => _currentGameState.redHealthPercent;
 
+  // Unit limit getters
+  int get blueUnitsRemaining => maxUnitsPerTeam - _blueUnitsSpawned;
+  int get redUnitsRemaining => maxUnitsPerTeam - _redUnitsSpawned;
+  int get blueUnitsSpawned => _blueUnitsSpawned;
+  int get redUnitsSpawned => _redUnitsSpawned;
+
+  // Selected unit getter
+  UnitComponent? get selectedUnit => _selectedUnit;
+
+  // New method to spawn single unit of specific type
+  void spawnSingleUnit(UnitType unitType, Team team) {
+    if (!_isLoaded || !_island.isMounted) return;
+
+    // Check unit limits
+    final currentSpawned =
+        team == Team.blue ? _blueUnitsSpawned : _redUnitsSpawned;
+    if (currentSpawned >= maxUnitsPerTeam) {
+      debugPrint(
+          '${team.name} team has reached maximum units ($maxUnitsPerTeam)');
+      return;
+    }
+
+    final rng = Random();
+    int attempts = 0;
+
+    // Get coastline for spawning units on the perimeter
+    final coastline = _island.getCoastline();
+    if (coastline.isEmpty) return;
+
+    // Get apex for movement target
+    final apex = getIslandApex();
+    if (apex == null) return;
+
+    while (attempts < 50) {
+      // Try up to 50 times to find a valid spawn point
+      // Spawn on a random point along the coastline
+      final spawnPoint = coastline[rng.nextInt(coastline.length)];
+      final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+
+      if (_island.isOnLand(unitPosition)) {
+        // Create unit model with slower initial velocity
+        Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
+        toApex.normalize();
+
+        final unitModel = UnitModel(
+          id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${team.name}_${unitType.name}',
+          type: unitType,
+          position: unitPosition,
+          team: team,
+          velocity: toApex.scaled(5.0),
+          isOnLandCallback: isOnLand,
+        );
+
+        // Create unit component
+        final unitComponent = UnitComponent(model: unitModel);
+        add(unitComponent);
+        _units.add(unitComponent);
+
+        // Update spawn counter
+        if (team == Team.blue) {
+          _blueUnitsSpawned++;
+        } else {
+          _redUnitsSpawned++;
+        }
+
+        debugPrint(
+            'Spawned ${unitType.name} for ${team.name} team. Remaining: ${team == Team.blue ? blueUnitsRemaining : redUnitsRemaining}');
+        return;
+      }
+      attempts++;
+    }
+
+    debugPrint('Failed to find valid spawn location for ${unitType.name}');
+  }
+
   void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
-    // Limit total units per team
-    final currentTeamUnits = _units.where((u) => u.model.team == team).length;
-    const int maxUnitsPerTeam = 24;
-
-    if (currentTeamUnits >= maxUnitsPerTeam) {
+    // Check unit limits
+    final currentSpawned =
+        team == Team.blue ? _blueUnitsSpawned : _redUnitsSpawned;
+    if (currentSpawned >= maxUnitsPerTeam) {
       debugPrint(
           '${team.name} team has reached maximum units ($maxUnitsPerTeam)');
       return;
@@ -297,7 +387,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
 
     while (spawned < maxUnits &&
         attempts < maxUnits * 20 &&
-        currentTeamUnits + spawned < maxUnitsPerTeam) {
+        currentSpawned + spawned < maxUnitsPerTeam) {
       // Spawn on a random point along the coastline
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
@@ -323,6 +413,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
           position: unitPosition,
           team: team,
           velocity: toApex.scaled(5.0), // Much slower initial velocity
+          isOnLandCallback: isOnLand, // Pass the land check callback
         );
 
         // Create unit component
@@ -334,8 +425,15 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       attempts++;
     }
 
+    // Update spawn counters
+    if (team == Team.blue) {
+      _blueUnitsSpawned += spawned;
+    } else {
+      _redUnitsSpawned += spawned;
+    }
+
     debugPrint(
-        'Spawned $spawned units for ${team.name} team. Total: ${currentTeamUnits + spawned}/$maxUnitsPerTeam');
+        'Spawned $spawned units for ${team.name} team. Total spawned: ${currentSpawned + spawned}/$maxUnitsPerTeam');
   }
 
   // Legacy method for compatibility with existing code
