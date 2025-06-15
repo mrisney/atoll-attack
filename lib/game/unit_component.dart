@@ -422,7 +422,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
     // Skip update if dead
     if (model.health <= 0) {
-      // Mark for removal if dead and not playing animation
+      // Start death animation if not already playing
+      if (!_isPlayingDeathAnimation) {
+        playDeathAnimation();
+      }
+      
+      // Mark for removal if dead and animation is complete
       if (isMounted && !_isPlayingDeathAnimation) {
         removeFromParent();
         // Also remove from game's unit list
@@ -470,14 +475,17 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   }
 
   void setTargetPosition(Vector2 target) {
-    model.targetPosition = target;
-
-    // Get the apex as the target
-    final apex = gameRef.getIslandApex();
-    if (apex != null) {
-      model.targetPosition = Vector2(apex.dx, apex.dy);
+    // Set the exact target position from player input
+    model.targetPosition = target.clone();
+    
+    // Force the unit to prioritize movement to the new target
+    model.forceRedirect = true;
+    
+    // Reset combat state if unit was engaged
+    if (model.state == UnitState.attacking) {
+      model.state = UnitState.moving;
     }
-
+    
     // Don't use pathfinding - let units move irregularly
     model.path = null;
   }

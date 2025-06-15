@@ -222,14 +222,29 @@ class IslandGame extends FlameGame
   }
 
   void captainReachedApex(UnitComponent captain) {
-    if (!_victoryAchieved) {
+    // Only set victory if captain plants flag at apex
+    if (!_victoryAchieved && captain.model.hasPlantedFlag) {
       _victoryAchieved = true;
       debugPrint('Victory! Captain has planted the flag at the apex!');
     }
   }
 
   bool isVictoryAchieved() {
-    return _victoryAchieved;
+    // Victory is achieved when all opposing units are eliminated or captain plants flag
+    if (_victoryAchieved) return true;
+    
+    // Check if one team has been completely eliminated
+    int blueCount = _units.where((u) => u.model.team == Team.blue && u.model.health > 0).length;
+    int redCount = _units.where((u) => u.model.team == Team.red && u.model.health > 0).length;
+    
+    // Only declare victory if both teams had units and one is now eliminated
+    if ((blueCount > 0 && redCount == 0 && redUnitsRemaining == 0) || 
+        (redCount > 0 && blueCount == 0 && blueUnitsRemaining == 0)) {
+      _victoryAchieved = true;
+      return true;
+    }
+    
+    return false;
   }
 
   void _clearSelection() {
@@ -247,8 +262,16 @@ class IslandGame extends FlameGame
     final minY = math.min(start.y, end.y);
     final maxY = math.max(start.y, end.y);
 
+    // Determine which team the player is controlling (last spawned unit's team)
+    Team? playerTeam;
+    if (_units.isNotEmpty) {
+      playerTeam = _units.last.model.team;
+    }
+
     for (final unit in _units) {
+      // Only select units of the player's team
       if (unit.model.health > 0 &&
+          (playerTeam == null || unit.model.team == playerTeam) &&
           unit.position.x >= minX &&
           unit.position.x <= maxX &&
           unit.position.y >= minY &&
@@ -266,9 +289,8 @@ class IslandGame extends FlameGame
 
     for (final unit in _selectedUnits) {
       if (isOnLand(target)) {
-        // Set direct target - make sure it's different from current position
-        unit.model.targetPosition = target.clone();
-        unit.model.path = null; // Clear any existing path
+        // Use the setTargetPosition method to properly handle redirection
+        unit.setTargetPosition(target);
         debugPrint(
             'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
       }
@@ -618,18 +640,22 @@ class IslandGame extends FlameGame
 
   @override
   bool onTapDown(TapDownInfo info) {
-    // Handle tap for spawning units if no selection is active
-    if (_selectedUnits.isEmpty) {
+    // If units are selected, move them to the tapped position
+    if (_selectedUnits.isNotEmpty) {
+      _moveSelectedUnits(info.eventPosition.global);
+    } else {
+      // No selection, spawn units
       spawnUnitsAtPosition(info.eventPosition.global);
     }
     return true;
   }
 
   void spawnUnitsAtPosition(Vector2 position) {
+    // Spawn only one unit of the current player's team
     Team team = _units.isEmpty || _units.last.model.team == Team.red
         ? Team.blue
         : Team.red;
-    spawnUnits(2, position, team);
+    spawnUnits(1, position, team);
   }
 
   void spawnUnits(int count, Vector2 position, Team team) {
