@@ -26,7 +26,7 @@ class GameControlsPanel extends ConsumerWidget {
           minWidth: isLandscape ? 400 : 320,
           maxHeight: isLandscape
               ? screenSize.height * 0.8 // 80% of screen height in landscape
-              : 220, // Fixed height in portrait
+              : 200, // Reduced height to prevent overflow
         ),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
@@ -38,7 +38,7 @@ class GameControlsPanel extends ConsumerWidget {
         ),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            vertical: isLandscape ? 12 : 8,
+            vertical: isLandscape ? 12 : 6, // Reduced padding
             horizontal: isLandscape ? 16 : 12,
           ),
           child: isLandscape
@@ -62,33 +62,33 @@ class GameControlsPanel extends ConsumerWidget {
               'Spawn Units',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 14,
+                fontSize: 13, // Slightly smaller
                 fontWeight: FontWeight.bold,
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+              icon: const Icon(Icons.close, color: Colors.white70, size: 16),
               onPressed: onClose,
-              constraints: const BoxConstraints(),
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               padding: EdgeInsets.zero,
             ),
           ],
         ),
 
         // Compact unit count display
-        _buildUnitCountDisplay(unitCounts),
-        const SizedBox(height: 8),
+        _buildCompactUnitCountDisplay(unitCounts),
+        const SizedBox(height: 6), // Reduced spacing
 
         // Spawn buttons in horizontal layout
         _buildSpawnButtons(unitCounts, game),
 
-        // Instructions
-        const SizedBox(height: 4),
+        // Instructions - smaller and more compact
+        const SizedBox(height: 2),
         Text(
-          'Drag to select units • Click to move selected units • Tap empty space to spawn',
+          'Drag to select • Click to move • Tap empty space to spawn',
           style: TextStyle(
             color: Colors.white.withOpacity(0.6),
-            fontSize: 9,
+            fontSize: 8, // Smaller text
           ),
           textAlign: TextAlign.center,
         ),
@@ -144,9 +144,9 @@ class GameControlsPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildUnitCountDisplay(Map<String, int> unitCounts) {
+  Widget _buildCompactUnitCountDisplay(Map<String, int> unitCounts) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.grey.withOpacity(0.25),
         borderRadius: BorderRadius.circular(6),
@@ -156,17 +156,17 @@ class GameControlsPanel extends ConsumerWidget {
         children: [
           _buildTeamInfo('Blue', unitCounts, Colors.blue, true),
           Container(
-            height: 40,
+            height: 35, // Reduced height
             width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
           _buildTeamInfo('Red', unitCounts, Colors.red, false),
           Container(
-            height: 40,
+            height: 35, // Reduced height
             width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
-          _buildLegend(),
+          _buildCompactLegend(),
         ],
       ),
     );
@@ -200,35 +200,36 @@ class GameControlsPanel extends ConsumerWidget {
     String prefix = isBlue ? 'blue' : 'red';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 8,
-              height: 8,
+              width: 6,
+              height: 6,
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             Text(
               team,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Text(
           'C:${unitCounts['${prefix}CaptainsRemaining']} A:${unitCounts['${prefix}ArchersRemaining']} S:${unitCounts['${prefix}SwordsmenRemaining']}',
           style: const TextStyle(
             color: Colors.white70,
-            fontSize: 10,
+            fontSize: 8,
             fontFamily: 'monospace',
           ),
         ),
@@ -236,7 +237,7 @@ class GameControlsPanel extends ConsumerWidget {
           'Total: ${unitCounts['${prefix}Remaining']}',
           style: TextStyle(
             color: color,
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -305,38 +306,38 @@ class GameControlsPanel extends ConsumerWidget {
   TextStyle get _valueStyle => const TextStyle(
       color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600);
 
-  Widget _buildLegend() {
+  Widget _buildCompactLegend() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         const Text(
           'Legend',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 11,
+            fontSize: 9,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 2),
         Text(
           'C=Captain($kMaxCaptainsPerTeam)',
           style: const TextStyle(
             color: Colors.white54,
-            fontSize: 9,
+            fontSize: 7,
           ),
         ),
         Text(
           'A=Archer($kMaxArchersPerTeam)',
           style: const TextStyle(
             color: Colors.white54,
-            fontSize: 9,
+            fontSize: 7,
           ),
         ),
         Text(
-          'S=Swordsman($kMaxSwordsmenPerTeam)',
+          'S=Swords($kMaxSwordsmenPerTeam)',
           style: const TextStyle(
             color: Colors.white54,
-            fontSize: 9,
+            fontSize: 7,
           ),
         ),
       ],
@@ -348,16 +349,17 @@ class GameControlsPanel extends ConsumerWidget {
       children: [
         Expanded(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 'Blue Team:',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -390,19 +392,20 @@ class GameControlsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 'Red Team:',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -544,17 +547,17 @@ class GameControlsPanel extends ConsumerWidget {
     String count,
   ) {
     return SizedBox(
-      width: 50,
-      height: 45,
+      width: 45, // Reduced width
+      height: 40, // Reduced height
       child: ElevatedButton(
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: enabled ? color : Colors.grey.shade600,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
           textStyle: const TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 8,
+            fontSize: 7,
           ),
           elevation: enabled ? 2 : 0,
           shape: RoundedRectangleBorder(
@@ -564,20 +567,20 @@ class GameControlsPanel extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 12),
-            Text(label, style: const TextStyle(fontSize: 8)),
+            Icon(icon, size: 10),
+            Text(label, style: const TextStyle(fontSize: 7)),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
               decoration: BoxDecoration(
                 color: enabled
                     ? Colors.black.withOpacity(0.3)
                     : Colors.grey.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 count,
                 style: const TextStyle(
-                  fontSize: 8,
+                  fontSize: 7,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'monospace',
                 ),

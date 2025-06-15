@@ -1,7 +1,7 @@
 import 'dart:ui'; // Add this import for Offset type
 import '../models/unit_model.dart';
 
-/// Simple rule-based system for game logic
+/// Simple rule-based system for game logic with proper validation
 class GameRulesEngine {
   /// Apply all game rules to a list of units
   static GameState processRules(List<UnitModel> units, {Offset? apex}) {
@@ -12,8 +12,8 @@ class GameRulesEngine {
     gameState.unitsToRemove =
         units.where((unit) => unit.health <= 0).map((u) => u.id).toList();
 
-    // Rule 2: Check victory conditions
-    gameState.victoryState = _checkVictoryConditions(aliveUnits);
+    // Rule 2: Check victory conditions with proper validation
+    gameState.victoryState = _checkVictoryConditions(aliveUnits, units);
 
     // Rule 3: Apply unit abilities based on context
     for (final unit in aliveUnits) {
@@ -31,10 +31,20 @@ class GameRulesEngine {
     return gameState;
   }
 
-  /// Rule: Check various victory conditions
-  static VictoryState _checkVictoryConditions(List<UnitModel> units) {
+  /// Rule: Check various victory conditions with better validation
+  static VictoryState _checkVictoryConditions(
+      List<UnitModel> aliveUnits, List<UnitModel> allUnits) {
+    // Don't check victory until both teams have units and game has progressed
+    final blueTotal = allUnits.where((u) => u.team == Team.blue).length;
+    final redTotal = allUnits.where((u) => u.team == Team.red).length;
+
+    // Require minimum units and time before victory can be achieved
+    if (blueTotal == 0 || redTotal == 0 || allUnits.length < 2) {
+      return VictoryState(hasWinner: false);
+    }
+
     // Flag victory - highest priority
-    for (final unit in units) {
+    for (final unit in aliveUnits) {
       if (unit.type == UnitType.captain && unit.hasPlantedFlag) {
         return VictoryState(
           hasWinner: true,
@@ -44,11 +54,11 @@ class GameRulesEngine {
       }
     }
 
-    final blueUnits = units.where((u) => u.team == Team.blue).toList();
-    final redUnits = units.where((u) => u.team == Team.red).toList();
+    final blueUnits = aliveUnits.where((u) => u.team == Team.blue).toList();
+    final redUnits = aliveUnits.where((u) => u.team == Team.red).toList();
 
-    // Elimination victory
-    if (blueUnits.isEmpty && redUnits.isNotEmpty) {
+    // Total elimination victory - only if both teams had units
+    if (blueUnits.isEmpty && redUnits.isNotEmpty && blueTotal > 0) {
       return VictoryState(
         hasWinner: true,
         winner: Team.red,
@@ -56,7 +66,7 @@ class GameRulesEngine {
       );
     }
 
-    if (redUnits.isEmpty && blueUnits.isNotEmpty) {
+    if (redUnits.isEmpty && blueUnits.isNotEmpty && redTotal > 0) {
       return VictoryState(
         hasWinner: true,
         winner: Team.blue,
@@ -64,26 +74,35 @@ class GameRulesEngine {
       );
     }
 
-    // Captain elimination - special case
+    // Captain elimination - special case (only if captains were spawned)
     final blueCaptains =
         blueUnits.where((u) => u.type == UnitType.captain).toList();
     final redCaptains =
         redUnits.where((u) => u.type == UnitType.captain).toList();
+    final blueCaptainsTotal = allUnits
+        .where((u) => u.team == Team.blue && u.type == UnitType.captain)
+        .length;
+    final redCaptainsTotal = allUnits
+        .where((u) => u.team == Team.red && u.type == UnitType.captain)
+        .length;
 
-    if (blueCaptains.isEmpty && redCaptains.isNotEmpty) {
-      return VictoryState(
-        hasWinner: true,
-        winner: Team.red,
-        reason: VictoryReason.captainElimination,
-      );
-    }
+    // Only check captain elimination if both teams had captains
+    if (blueCaptainsTotal > 0 && redCaptainsTotal > 0) {
+      if (blueCaptains.isEmpty && redCaptains.isNotEmpty) {
+        return VictoryState(
+          hasWinner: true,
+          winner: Team.red,
+          reason: VictoryReason.captainElimination,
+        );
+      }
 
-    if (redCaptains.isEmpty && blueCaptains.isNotEmpty) {
-      return VictoryState(
-        hasWinner: true,
-        winner: Team.blue,
-        reason: VictoryReason.captainElimination,
-      );
+      if (redCaptains.isEmpty && blueCaptains.isNotEmpty) {
+        return VictoryState(
+          hasWinner: true,
+          winner: Team.blue,
+          reason: VictoryReason.captainElimination,
+        );
+      }
     }
 
     return VictoryState(hasWinner: false);
@@ -145,7 +164,7 @@ class GameRulesEngine {
     double totalHealth = teamUnits.fold(0.0, (sum, unit) => sum + unit.health);
     double maxHealth = teamUnits.fold(0.0, (sum, unit) => sum + unit.maxHealth);
 
-    return totalHealth / maxHealth;
+    return maxHealth > 0 ? totalHealth / maxHealth : 0.0;
   }
 }
 

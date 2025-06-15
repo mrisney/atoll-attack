@@ -1,55 +1,94 @@
 import '../models/unit_model.dart';
 
-/// Handles victory condition checks
+/// Handles victory condition checks with proper validation
 class VictoryConditions {
   /// Check if a team has won by planting a flag at the apex
   static bool checkFlagVictory(List<UnitModel> units) {
     for (final unit in units) {
-      if (unit.type == UnitType.captain && unit.hasPlantedFlag) {
+      if (unit.type == UnitType.captain &&
+          unit.hasPlantedFlag &&
+          unit.health > 0) {
         return true;
       }
     }
     return false;
   }
-  
+
   /// Check if a team has won by eliminating all enemy units
   static bool checkEliminationVictory(List<UnitModel> units, Team team) {
-    // Check if any enemy units are still alive
-    bool enemiesExist = false;
-    bool enemiesAlive = false;
-    
+    // Only check if the game has actually started (both teams have units)
+    bool blueHasUnits = false;
+    bool redHasUnits = false;
+    bool blueHasAliveUnits = false;
+    bool redHasAliveUnits = false;
+
     for (final unit in units) {
-      if (unit.team != team) {
-        enemiesExist = true;
+      if (unit.team == Team.blue) {
+        blueHasUnits = true;
         if (unit.health > 0) {
-          enemiesAlive = true;
-          break;
+          blueHasAliveUnits = true;
+        }
+      } else if (unit.team == Team.red) {
+        redHasUnits = true;
+        if (unit.health > 0) {
+          redHasAliveUnits = true;
         }
       }
     }
-    
-    // Victory if enemies existed but none are alive
-    return enemiesExist && !enemiesAlive;
+
+    // Only declare victory if:
+    // 1. Both teams have spawned units
+    // 2. One team has no alive units
+    // 3. The other team has at least one alive unit
+    if (!blueHasUnits || !redHasUnits) {
+      return false; // Game hasn't properly started
+    }
+
+    if (team == Team.blue) {
+      return !redHasAliveUnits && blueHasAliveUnits;
+    } else {
+      return !blueHasAliveUnits && redHasAliveUnits;
+    }
   }
-  
+
   /// Get the winning team if there is one
   static Team? getWinningTeam(List<UnitModel> units) {
-    // Check flag victory
+    // Ensure we have a minimum number of units before checking victory
+    if (units.length < 2) {
+      return null; // Not enough units to have a meaningful game
+    }
+
+    // Check flag victory first (highest priority)
     for (final unit in units) {
-      if (unit.type == UnitType.captain && unit.hasPlantedFlag) {
+      if (unit.type == UnitType.captain &&
+          unit.hasPlantedFlag &&
+          unit.health > 0) {
         return unit.team;
       }
     }
-    
+
+    // Count alive units by team
+    int blueAlive =
+        units.where((u) => u.team == Team.blue && u.health > 0).length;
+    int redAlive =
+        units.where((u) => u.team == Team.red && u.health > 0).length;
+    int blueTotal = units.where((u) => u.team == Team.blue).length;
+    int redTotal = units.where((u) => u.team == Team.red).length;
+
+    // Only check elimination if both teams have spawned units
+    if (blueTotal == 0 || redTotal == 0) {
+      return null; // Game hasn't properly started
+    }
+
     // Check elimination victory
-    if (checkEliminationVictory(units, Team.blue)) {
+    if (blueAlive > 0 && redAlive == 0) {
       return Team.blue;
     }
-    
-    if (checkEliminationVictory(units, Team.red)) {
+
+    if (redAlive > 0 && blueAlive == 0) {
       return Team.red;
     }
-    
+
     return null; // No winner yet
   }
 }
