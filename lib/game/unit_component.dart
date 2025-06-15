@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../models/unit_model.dart';
@@ -9,6 +10,20 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   late Paint _fillPaint;
   late Paint _borderPaint;
   late Paint _selectedPaint;
+
+  // Death animation properties
+  bool _isPlayingDeathAnimation = false;
+  double _deathAnimationTimer = 0.0;
+  static const double _deathAnimationDuration = 0.8; // seconds
+  double _deathScale = 1.0;
+  double _deathOpacity = 1.0;
+  double _deathRotation = 0.0;
+
+  // Victory animation properties for defeated units
+  bool _isVictoryAnimation = false;
+  double _victoryAnimationTimer = 0.0;
+  static const double _victoryAnimationDuration = 0.5;
+  double _victoryScale = 1.0;
 
   // Will be used when artwork is available
   Sprite? unitSprite;
@@ -75,10 +90,39 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     }
   }
 
+  /// Trigger death animation
+  void playDeathAnimation() {
+    _isPlayingDeathAnimation = true;
+    _deathAnimationTimer = 0.0;
+  }
+
+  /// Trigger victory animation (for units that win battles)
+  void playVictoryAnimation() {
+    _isVictoryAnimation = true;
+    _victoryAnimationTimer = 0.0;
+  }
+
   @override
   void render(Canvas canvas) {
-    // Skip rendering if dead
-    if (model.health <= 0) return;
+    // Apply death animation transformations
+    if (_isPlayingDeathAnimation) {
+      canvas.save();
+      canvas.scale(_deathScale);
+      canvas.rotate(_deathRotation);
+
+      // Apply opacity by modifying paint colors
+      _fillPaint.color = model.color.withOpacity(_deathOpacity);
+      _borderPaint.color = Colors.black.withOpacity(0.2 * _deathOpacity);
+    }
+
+    // Apply victory animation transformations
+    if (_isVictoryAnimation) {
+      canvas.save();
+      canvas.scale(_victoryScale);
+    }
+
+    // Skip rendering if dead and animation is complete
+    if (model.health <= 0 && !_isPlayingDeathAnimation) return;
 
     if (gameRef.useAssets && unitSprite != null) {
       _renderWithAssets(canvas);
@@ -86,10 +130,17 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       _renderSimpleShapes(canvas);
     }
 
-    // Always render health bar and selection indicator
-    _renderHealthBar(canvas);
-    if (model.isSelected) {
-      _renderSelectionIndicator(canvas);
+    // Always render health bar and selection indicator (unless playing death animation)
+    if (!_isPlayingDeathAnimation) {
+      _renderHealthBar(canvas);
+      if (model.isSelected) {
+        _renderSelectionIndicator(canvas);
+      }
+    }
+
+    // Restore canvas if transformations were applied
+    if (_isPlayingDeathAnimation || _isVictoryAnimation) {
+      canvas.restore();
     }
   }
 
@@ -134,7 +185,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       canvas.drawPath(
           crownPath,
           Paint()
-            ..color = Colors.yellow
+            ..color = Colors.yellow.withOpacity(_deathOpacity)
             ..strokeWidth = 1.5
             ..style = PaintingStyle.stroke);
 
@@ -152,12 +203,13 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         canvas.drawPath(
             flagPole,
             Paint()
-              ..color = Colors.white
+              ..color = Colors.white.withOpacity(_deathOpacity)
               ..strokeWidth = 1);
         canvas.drawPath(
             flag,
             Paint()
-              ..color = model.team == Team.blue ? Colors.blue : Colors.red
+              ..color = (model.team == Team.blue ? Colors.blue : Colors.red)
+                  .withOpacity(_deathOpacity)
               ..style = PaintingStyle.fill);
       }
     } else if (model.type == UnitType.swordsman) {
@@ -166,7 +218,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         Offset(size.x / 2, size.y / 2 + 2),
         model.radius * 0.5,
         Paint()
-          ..color = Colors.grey
+          ..color = Colors.grey.withOpacity(_deathOpacity)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5,
       );
@@ -184,17 +236,27 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       canvas.drawPath(
           bow,
           Paint()
-            ..color = Colors.brown
+            ..color = Colors.brown.withOpacity(_deathOpacity)
             ..strokeWidth = 1.5
             ..style = PaintingStyle.stroke);
     }
 
-    // Draw attack indicator if attacking
-    if (model.state == UnitState.attacking) {
+    // Draw attack indicator if attacking (and not dying)
+    if (model.state == UnitState.attacking && !_isPlayingDeathAnimation) {
       _renderAttackIndicator(canvas);
-    } else if (model.velocity.length > 0.1) {
+    } else if (model.velocity.length > 0.1 && !_isPlayingDeathAnimation) {
       // Draw direction indicator when moving
       _renderDirectionIndicator(canvas);
+    }
+
+    // Draw death effects
+    if (_isPlayingDeathAnimation) {
+      _renderDeathEffect(canvas);
+    }
+
+    // Draw victory effects
+    if (_isVictoryAnimation) {
+      _renderVictoryEffect(canvas);
     }
   }
 
@@ -239,7 +301,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         Offset(start.x, start.y),
         Offset(end.x, end.y),
         Paint()
-          ..color = Colors.yellow
+          ..color = Colors.yellow.withOpacity(_deathOpacity)
           ..strokeWidth = 1,
       );
     } else if (model.type == UnitType.swordsman) {
@@ -251,7 +313,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         1.0,
         false,
         Paint()
-          ..color = Colors.white
+          ..color = Colors.white.withOpacity(_deathOpacity)
           ..strokeWidth = 2
           ..style = PaintingStyle.stroke,
       );
@@ -267,19 +329,101 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       Offset(start.x, start.y),
       Offset(end.x, end.y),
       Paint()
-        ..color = Colors.white
+        ..color = Colors.white.withOpacity(_deathOpacity)
         ..strokeWidth = 2,
     );
+  }
+
+  void _renderDeathEffect(Canvas canvas) {
+    // Draw some death particles/effects
+    final center = Offset(size.x / 2, size.y / 2);
+    final progress = _deathAnimationTimer / _deathAnimationDuration;
+
+    // Draw fading red crosses or X marks
+    final paint = Paint()
+      ..color = Colors.red.withOpacity(_deathOpacity * 0.8)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    // Draw X
+    final crossSize = model.radius * 0.8;
+    canvas.drawLine(
+      center + Offset(-crossSize, -crossSize),
+      center + Offset(crossSize, crossSize),
+      paint,
+    );
+    canvas.drawLine(
+      center + Offset(-crossSize, crossSize),
+      center + Offset(crossSize, -crossSize),
+      paint,
+    );
+  }
+
+  void _renderVictoryEffect(Canvas canvas) {
+    // Draw victory sparkles or glow effect
+    final center = Offset(size.x / 2, size.y / 2);
+    final paint = Paint()
+      ..color = Colors.yellow.withOpacity(0.8)
+      ..style = PaintingStyle.fill;
+
+    // Draw small sparkles around the unit
+    for (int i = 0; i < 6; i++) {
+      final angle = (i / 6) * 2 * math.pi;
+      final sparklePos = center +
+          Offset(
+            math.cos(angle) * model.radius * 1.5,
+            math.sin(angle) * model.radius * 1.5,
+          );
+      canvas.drawCircle(sparklePos, 2, paint);
+    }
   }
 
   @override
   void update(double dt) {
     super.update(dt);
 
+    // Update death animation
+    if (_isPlayingDeathAnimation) {
+      _deathAnimationTimer += dt;
+      final progress =
+          (_deathAnimationTimer / _deathAnimationDuration).clamp(0.0, 1.0);
+
+      // Animate scale (shrinking)
+      _deathScale = 1.0 - (progress * 0.8);
+
+      // Animate opacity (fading)
+      _deathOpacity = 1.0 - progress;
+
+      // Animate rotation (spinning)
+      _deathRotation = progress * math.pi * 2;
+
+      // Complete animation
+      if (_deathAnimationTimer >= _deathAnimationDuration) {
+        _isPlayingDeathAnimation = false;
+      }
+      return; // Don't update model during death animation
+    }
+
+    // Update victory animation
+    if (_isVictoryAnimation) {
+      _victoryAnimationTimer += dt;
+      final progress =
+          (_victoryAnimationTimer / _victoryAnimationDuration).clamp(0.0, 1.0);
+
+      // Animate scale (pulsing)
+      _victoryScale = 1.0 + (math.sin(progress * math.pi * 4) * 0.2);
+
+      // Complete animation
+      if (_victoryAnimationTimer >= _victoryAnimationDuration) {
+        _isVictoryAnimation = false;
+        _victoryScale = 1.0;
+      }
+    }
+
     // Skip update if dead
     if (model.health <= 0) {
-      // Mark for removal if dead
-      if (isMounted) {
+      // Mark for removal if dead and not playing animation
+      if (isMounted && !_isPlayingDeathAnimation) {
         removeFromParent();
         // Also remove from game's unit list
         gameRef.getAllUnits().remove(this);
@@ -296,8 +440,18 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     // Get elevation at current position for terrain checking
     double elevation = gameRef.getElevationAt(model.position);
 
+    // Check if unit just won a battle (defeated an enemy)
+    final wasInCombat = model.state == UnitState.attacking;
+
     // Update unit model using your model's update method signature
     model.update(dt, units, apex, elevationAtPosition: elevation);
+
+    // If unit was in combat and is no longer attacking, play victory animation
+    if (wasInCombat &&
+        model.state != UnitState.attacking &&
+        !_isVictoryAnimation) {
+      playVictoryAnimation();
+    }
 
     // Check for captain victory
     if (model.type == UnitType.captain && model.hasPlantedFlag) {

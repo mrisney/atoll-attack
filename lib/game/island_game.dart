@@ -27,10 +27,17 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   bool _victoryAchieved = false;
   bool useAssets = false; // Toggle for using artwork vs simple shapes
 
-  // Unit limit tracking
-  static const int maxUnitsPerTeam = 50;
-  int _blueUnitsSpawned = 0;
-  int _redUnitsSpawned = 0;
+  // Unit limit tracking with proper counts per type
+  static const int maxCaptainsPerTeam = 1;
+  static const int maxArchersPerTeam = 12;
+  static const int maxSwordsmenPerTeam = 12;
+
+  int _blueCaptainsSpawned = 0;
+  int _blueArchersSpawned = 0;
+  int _blueSwordsmenSpawned = 0;
+  int _redCaptainsSpawned = 0;
+  int _redArchersSpawned = 0;
+  int _redSwordsmenSpawned = 0;
 
   // Rules engine properties
   GameState _currentGameState = GameState();
@@ -244,16 +251,19 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         final unitToRemove =
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
-          // Decrease spawn counter when unit dies
-          if (unitToRemove.model.team == Team.blue) {
-            _blueUnitsSpawned =
-                (_blueUnitsSpawned - 1).clamp(0, maxUnitsPerTeam);
-          } else {
-            _redUnitsSpawned = (_redUnitsSpawned - 1).clamp(0, maxUnitsPerTeam);
-          }
+          // Decrease spawn counter when unit dies based on type
+          _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
 
-          unitToRemove.removeFromParent();
-          _units.remove(unitToRemove);
+          // Add death animation before removal
+          unitToRemove.playDeathAnimation();
+
+          // Remove after a short delay to allow animation
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (unitToRemove.isMounted) {
+              unitToRemove.removeFromParent();
+              _units.remove(unitToRemove);
+            }
+          });
         }
       }
 
@@ -276,17 +286,64 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     }
   }
 
+  // Helper method to decrement unit counts
+  void _decrementUnitCount(Team team, UnitType type) {
+    if (team == Team.blue) {
+      switch (type) {
+        case UnitType.captain:
+          _blueCaptainsSpawned =
+              (_blueCaptainsSpawned - 1).clamp(0, maxCaptainsPerTeam);
+        case UnitType.archer:
+          _blueArchersSpawned =
+              (_blueArchersSpawned - 1).clamp(0, maxArchersPerTeam);
+        case UnitType.swordsman:
+          _blueSwordsmenSpawned =
+              (_blueSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
+      }
+    } else {
+      switch (type) {
+        case UnitType.captain:
+          _redCaptainsSpawned =
+              (_redCaptainsSpawned - 1).clamp(0, maxCaptainsPerTeam);
+        case UnitType.archer:
+          _redArchersSpawned =
+              (_redArchersSpawned - 1).clamp(0, maxArchersPerTeam);
+        case UnitType.swordsman:
+          _redSwordsmenSpawned =
+              (_redSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
+      }
+    }
+  }
+
   // Getter methods for the HUD
   int get blueUnitCount => _currentGameState.blueUnits;
   int get redUnitCount => _currentGameState.redUnits;
   double get blueHealthPercent => _currentGameState.blueHealthPercent;
   double get redHealthPercent => _currentGameState.redHealthPercent;
 
-  // Unit limit getters
-  int get blueUnitsRemaining => maxUnitsPerTeam - _blueUnitsSpawned;
-  int get redUnitsRemaining => maxUnitsPerTeam - _redUnitsSpawned;
-  int get blueUnitsSpawned => _blueUnitsSpawned;
-  int get redUnitsSpawned => _redUnitsSpawned;
+  // Updated unit remaining calculations
+  int get blueUnitsRemaining =>
+      (maxCaptainsPerTeam - _blueCaptainsSpawned) +
+      (maxArchersPerTeam - _blueArchersSpawned) +
+      (maxSwordsmenPerTeam - _blueSwordsmenSpawned);
+  int get redUnitsRemaining =>
+      (maxCaptainsPerTeam - _redCaptainsSpawned) +
+      (maxArchersPerTeam - _redArchersSpawned) +
+      (maxSwordsmenPerTeam - _redSwordsmenSpawned);
+
+  // Individual unit type getters for controls panel
+  int get blueCaptainsRemaining => maxCaptainsPerTeam - _blueCaptainsSpawned;
+  int get blueArchersRemaining => maxArchersPerTeam - _blueArchersSpawned;
+  int get blueSwordsmenRemaining => maxSwordsmenPerTeam - _blueSwordsmenSpawned;
+  int get redCaptainsRemaining => maxCaptainsPerTeam - _redCaptainsSpawned;
+  int get redArchersRemaining => maxArchersPerTeam - _redArchersSpawned;
+  int get redSwordsmenRemaining => maxSwordsmenPerTeam - _redSwordsmenSpawned;
+
+  // Spawned unit count getters for game provider
+  int get blueUnitsSpawned =>
+      _blueCaptainsSpawned + _blueArchersSpawned + _blueSwordsmenSpawned;
+  int get redUnitsSpawned =>
+      _redCaptainsSpawned + _redArchersSpawned + _redSwordsmenSpawned;
 
   // Selected unit getter
   UnitComponent? get selectedUnit => _selectedUnit;
@@ -295,12 +352,31 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   void spawnSingleUnit(UnitType unitType, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
-    // Check unit limits
-    final currentSpawned =
-        team == Team.blue ? _blueUnitsSpawned : _redUnitsSpawned;
-    if (currentSpawned >= maxUnitsPerTeam) {
+    // Check unit limits for specific type
+    bool canSpawn = false;
+    if (team == Team.blue) {
+      switch (unitType) {
+        case UnitType.captain:
+          canSpawn = _blueCaptainsSpawned < maxCaptainsPerTeam;
+        case UnitType.archer:
+          canSpawn = _blueArchersSpawned < maxArchersPerTeam;
+        case UnitType.swordsman:
+          canSpawn = _blueSwordsmenSpawned < maxSwordsmenPerTeam;
+      }
+    } else {
+      switch (unitType) {
+        case UnitType.captain:
+          canSpawn = _redCaptainsSpawned < maxCaptainsPerTeam;
+        case UnitType.archer:
+          canSpawn = _redArchersSpawned < maxArchersPerTeam;
+        case UnitType.swordsman:
+          canSpawn = _redSwordsmenSpawned < maxSwordsmenPerTeam;
+      }
+    }
+
+    if (!canSpawn) {
       debugPrint(
-          '${team.name} team has reached maximum units ($maxUnitsPerTeam)');
+          '${team.name} team has reached maximum ${unitType.name} units');
       return;
     }
 
@@ -340,15 +416,29 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         add(unitComponent);
         _units.add(unitComponent);
 
-        // Update spawn counter
+        // Update spawn counter for specific type
         if (team == Team.blue) {
-          _blueUnitsSpawned++;
+          switch (unitType) {
+            case UnitType.captain:
+              _blueCaptainsSpawned++;
+            case UnitType.archer:
+              _blueArchersSpawned++;
+            case UnitType.swordsman:
+              _blueSwordsmenSpawned++;
+          }
         } else {
-          _redUnitsSpawned++;
+          switch (unitType) {
+            case UnitType.captain:
+              _redCaptainsSpawned++;
+            case UnitType.archer:
+              _redArchersSpawned++;
+            case UnitType.swordsman:
+              _redSwordsmenSpawned++;
+          }
         }
 
         debugPrint(
-            'Spawned ${unitType.name} for ${team.name} team. Remaining: ${team == Team.blue ? blueUnitsRemaining : redUnitsRemaining}');
+            'Spawned ${unitType.name} for ${team.name} team. Remaining: ${_getRemainingForType(team, unitType)}');
         return;
       }
       attempts++;
@@ -357,17 +447,30 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     debugPrint('Failed to find valid spawn location for ${unitType.name}');
   }
 
+  int _getRemainingForType(Team team, UnitType type) {
+    if (team == Team.blue) {
+      switch (type) {
+        case UnitType.captain:
+          return blueCaptainsRemaining;
+        case UnitType.archer:
+          return blueArchersRemaining;
+        case UnitType.swordsman:
+          return blueSwordsmenRemaining;
+      }
+    } else {
+      switch (type) {
+        case UnitType.captain:
+          return redCaptainsRemaining;
+        case UnitType.archer:
+          return redArchersRemaining;
+        case UnitType.swordsman:
+          return redSwordsmenRemaining;
+      }
+    }
+  }
+
   void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
-
-    // Check unit limits
-    final currentSpawned =
-        team == Team.blue ? _blueUnitsSpawned : _redUnitsSpawned;
-    if (currentSpawned >= maxUnitsPerTeam) {
-      debugPrint(
-          '${team.name} team has reached maximum units ($maxUnitsPerTeam)');
-      return;
-    }
 
     final rng = Random();
     int attempts = 0, spawned = 0;
@@ -385,9 +488,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     final apex = getIslandApex();
     if (apex == null) return;
 
-    while (spawned < maxUnits &&
-        attempts < maxUnits * 20 &&
-        currentSpawned + spawned < maxUnitsPerTeam) {
+    while (spawned < maxUnits && attempts < maxUnits * 20) {
       // Spawn on a random point along the coastline
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
@@ -395,12 +496,30 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       if (_island.isOnLand(unitPosition)) {
         // Determine unit type - prioritize captain if none exists
         UnitType unitType;
-        if (!hasCaptain) {
+        if (!hasCaptain &&
+            (team == Team.blue
+                ? blueCaptainsRemaining > 0
+                : redCaptainsRemaining > 0)) {
           unitType = UnitType.captain;
           hasCaptain = true;
         } else {
-          // Random between swordsman and archer
-          unitType = rng.nextBool() ? UnitType.swordsman : UnitType.archer;
+          // Random between swordsman and archer, check availability
+          bool canSpawnArcher = team == Team.blue
+              ? blueArchersRemaining > 0
+              : redArchersRemaining > 0;
+          bool canSpawnSwordsman = team == Team.blue
+              ? blueSwordsmenRemaining > 0
+              : redSwordsmenRemaining > 0;
+
+          if (canSpawnArcher && canSpawnSwordsman) {
+            unitType = rng.nextBool() ? UnitType.swordsman : UnitType.archer;
+          } else if (canSpawnArcher) {
+            unitType = UnitType.archer;
+          } else if (canSpawnSwordsman) {
+            unitType = UnitType.swordsman;
+          } else {
+            break; // No units available to spawn
+          }
         }
 
         // Create unit model with slower initial velocity
@@ -420,20 +539,35 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         final unitComponent = UnitComponent(model: unitModel);
         add(unitComponent);
         _units.add(unitComponent);
+
+        // Update spawn counters for specific type
+        if (team == Team.blue) {
+          switch (unitType) {
+            case UnitType.captain:
+              _blueCaptainsSpawned++;
+            case UnitType.archer:
+              _blueArchersSpawned++;
+            case UnitType.swordsman:
+              _blueSwordsmenSpawned++;
+          }
+        } else {
+          switch (unitType) {
+            case UnitType.captain:
+              _redCaptainsSpawned++;
+            case UnitType.archer:
+              _redArchersSpawned++;
+            case UnitType.swordsman:
+              _redSwordsmenSpawned++;
+          }
+        }
+
         spawned++;
       }
       attempts++;
     }
 
-    // Update spawn counters
-    if (team == Team.blue) {
-      _blueUnitsSpawned += spawned;
-    } else {
-      _redUnitsSpawned += spawned;
-    }
-
     debugPrint(
-        'Spawned $spawned units for ${team.name} team. Total spawned: ${currentSpawned + spawned}/$maxUnitsPerTeam');
+        'Spawned $spawned units for ${team.name} team. Blue remaining: $blueUnitsRemaining, Red remaining: $redUnitsRemaining');
   }
 
   // Legacy method for compatibility with existing code

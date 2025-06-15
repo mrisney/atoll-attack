@@ -38,7 +38,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       children: [
         GameWidget(game: game),
 
-        // Game HUD with reactive unit counts
+        // Game HUD with reactive unit counts and perimeter toggle
         GameHUD(
           blueUnits: unitCounts['blueActive'] ?? 0,
           redUnits: unitCounts['redActive'] ?? 0,
@@ -49,59 +49,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           selectedUnit: game.selectedUnit?.model,
           blueUnitsRemaining: unitCounts['blueRemaining'] ?? 0,
           redUnitsRemaining: unitCounts['redRemaining'] ?? 0,
-        ),
-
-        // Persistent Perimeter Toggle (always visible)
-        Positioned(
-          bottom: 100,
-          left: 16,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.grid_on,
-                    color: Colors.white.withOpacity(0.8),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Perimeter',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 20,
-                    child: Switch(
-                      value: showPerimeter,
-                      onChanged: (value) {
-                        ref.read(showPerimeterProvider.notifier).state = value;
-                      },
-                      activeColor: Colors.purple.shade300,
-                      inactiveThumbColor: Colors.grey.shade400,
-                      inactiveTrackColor: Colors.grey.withOpacity(0.3),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          showPerimeter: showPerimeter,
+          onPerimeterToggle: (value) {
+            ref.read(showPerimeterProvider.notifier).state = value;
+          },
         ),
 
         // Control buttons
