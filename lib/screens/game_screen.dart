@@ -52,12 +52,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           GameWidget(game: game),
 
           // Game HUD with reactive data
-          Positioned(
-            top: safePadding.top + (isLandscape ? 8 : 12),
-            left: isLandscape ? 12 : 16,
-            right: isLandscape ? screenSize.width * 0.4 : 16,
-            child: _buildGameHUD(gameStats, showPerimeter, game),
-          ),
+          _buildGameHUD(gameStats, showPerimeter, game, safePadding,
+              isLandscape, screenSize),
 
           // Control buttons - responsive positioning
           Positioned(
@@ -151,7 +147,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   color: Colors.black.withOpacity(0.6),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: _buildDebugInfo(gameStats),
+                child: _buildDebugInfoContent(gameStats),
               ),
             ),
 
@@ -162,7 +158,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  Widget _buildGameHUD(dynamic gameStats, bool showPerimeter, dynamic game) {
+  Widget _buildGameHUD(dynamic gameStats, bool showPerimeter, dynamic game,
+      EdgeInsets safePadding, bool isLandscape, Size screenSize) {
+    return Positioned(
+      top: safePadding.top + (isLandscape ? 8 : 12),
+      left: isLandscape ? 12 : 16,
+      right: isLandscape ? screenSize.width * 0.4 : 16,
+      child: _buildGameHUDContent(gameStats, showPerimeter, game),
+    );
+  }
+
+  Widget _buildGameHUDContent(
+      dynamic gameStats, bool showPerimeter, dynamic game) {
     // Check if gameStats is AsyncValue or Map
     if (gameStats is AsyncValue) {
       return gameStats.when(
@@ -205,7 +212,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
-  Widget _buildDebugInfo(dynamic gameStats) {
+  Widget _buildDebugInfoContent(dynamic gameStats) {
     if (gameStats is AsyncValue) {
       return gameStats.when(
         data: (stats) => Text(
