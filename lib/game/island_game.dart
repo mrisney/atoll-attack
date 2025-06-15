@@ -7,6 +7,7 @@ import 'unit_component.dart';
 import '../models/unit_model.dart';
 import '../rules/victory_conditions.dart';
 import '../rules/combat_rules.dart';
+import '../rules/game_rules_engine.dart';
 import '../services/pathfinding_service.dart';
 import 'dart:math';
 
@@ -25,6 +26,12 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   UnitComponent? _selectedUnit;
   bool _victoryAchieved = false;
   bool useAssets = false; // Toggle for using artwork vs simple shapes
+
+  // Rules engine properties
+  GameState _currentGameState = GameState();
+  double _lastRulesUpdate = 0.0;
+  static const double _rulesUpdateInterval =
+      0.1; // Update rules 10 times per second
 
   IslandGame({
     required this.amplitude,
@@ -138,7 +145,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     }
     return null;
   }
-  
+
   List<Offset> getCoastline() {
     if (_isLoaded && _island.isMounted) {
       return _island.getCoastline();
@@ -149,10 +156,10 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   List<UnitComponent> getAllUnits() {
     return _units;
   }
-  
+
   // Pathfinding service
   PathfindingService? _pathfindingService;
-  
+
   PathfindingService? getPathfindingService() {
     if (_pathfindingService == null && _isLoaded && _island.isMounted) {
       final islandModel = _island.getIslandGridModel();
@@ -162,7 +169,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
     }
     return _pathfindingService;
   }
-  
+
   void captainReachedApex(UnitComponent captain) {
     if (!_victoryAchieved) {
       _victoryAchieved = true;
@@ -170,7 +177,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       // Here you could trigger victory animations, sounds, etc.
     }
   }
-  
+
   bool isVictoryAchieved() {
     return _victoryAchieved;
   }
@@ -181,7 +188,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       _selectedUnit!.setSelected(false);
       _selectedUnit = null;
     }
-    
+
     // Find unit under touch position
     for (final unit in _units) {
       if (unit.containsPoint(position)) {
@@ -191,7 +198,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       }
     }
   }
-  
+
   void moveSelectedUnit(Vector2 target) {
     if (_selectedUnit != null && isOnLand(target)) {
       _selectedUnit!.setTargetPosition(target);
@@ -201,60 +208,123 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   void checkVictoryConditions() {
     // Get all unit models
     final unitModels = _units.map((u) => u.model).toList();
-    
+
     // Use victory conditions class to check for winners
     final winningTeam = VictoryConditions.getWinningTeam(unitModels);
-    
+
     if (winningTeam != null) {
       _victoryAchieved = true;
       debugPrint('${winningTeam == Team.blue ? "Blue" : "Red"} team wins!');
     }
   }
-  
+
+  // Rules engine processing
+  void processGameRules() {
+    _lastRulesUpdate += 1 / 60; // Approximate frame time
+
+    if (_lastRulesUpdate >= _rulesUpdateInterval) {
+      _lastRulesUpdate = 0.0;
+
+      final unitModels = _units.map((u) => u.model).toList();
+      _currentGameState = GameRulesEngine.processRules(
+        unitModels,
+        apex: getIslandApex(),
+      );
+
+      // Handle unit removal
+      for (final unitId in _currentGameState.unitsToRemove) {
+        final unitToRemove =
+            _units.where((u) => u.model.id == unitId).firstOrNull;
+        if (unitToRemove != null) {
+          unitToRemove.removeFromParent();
+          _units.remove(unitToRemove);
+        }
+      }
+
+      // Check victory conditions
+      if (_currentGameState.victoryState.hasWinner && !_victoryAchieved) {
+        _victoryAchieved = true;
+        final winner = _currentGameState.victoryState.winner;
+        final reason = _currentGameState.victoryState.reason;
+
+        String reasonText = switch (reason) {
+          VictoryReason.flagCapture => 'Flag captured at the apex!',
+          VictoryReason.elimination => 'All enemy units eliminated!',
+          VictoryReason.captainElimination => 'Enemy captain eliminated!',
+          _ => 'Victory achieved!',
+        };
+
+        debugPrint(
+            '${winner == Team.blue ? "Blue" : "Red"} team wins! $reasonText');
+      }
+    }
+  }
+
+  // Getter methods for the HUD
+  int get blueUnitCount => _currentGameState.blueUnits;
+  int get redUnitCount => _currentGameState.redUnits;
+  double get blueHealthPercent => _currentGameState.blueHealthPercent;
+  double get redHealthPercent => _currentGameState.redHealthPercent;
+
   void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
+
+    // Limit total units per team
+    final currentTeamUnits = _units.where((u) => u.model.team == team).length;
+    const int maxUnitsPerTeam = 24;
+
+    if (currentTeamUnits >= maxUnitsPerTeam) {
+      debugPrint(
+          '${team.name} team has reached maximum units ($maxUnitsPerTeam)');
+      return;
+    }
+
     final rng = Random();
     int attempts = 0, spawned = 0;
-    
-    // Always spawn exactly 2 units: one captain and one swordsman
+
+    // Spawn exactly 2 units: one captain and one other unit
     final int maxUnits = 2;
-    bool hasCaptain = false;
-    
+    bool hasCaptain = _units
+        .any((u) => u.model.team == team && u.model.type == UnitType.captain);
+
     // Get coastline for spawning units on the perimeter
     final coastline = _island.getCoastline();
     if (coastline.isEmpty) return;
-    
+
     // Get apex for movement target
     final apex = getIslandApex();
     if (apex == null) return;
-    
-    while (spawned < maxUnits && attempts < maxUnits * 20) {
+
+    while (spawned < maxUnits &&
+        attempts < maxUnits * 20 &&
+        currentTeamUnits + spawned < maxUnitsPerTeam) {
       // Spawn on a random point along the coastline
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
-      
+
       if (_island.isOnLand(unitPosition)) {
-        // Determine unit type - only captain and swordsman
+        // Determine unit type - prioritize captain if none exists
         UnitType unitType;
         if (!hasCaptain) {
           unitType = UnitType.captain;
           hasCaptain = true;
         } else {
-          unitType = UnitType.swordsman;
+          // Random between swordsman and archer
+          unitType = rng.nextBool() ? UnitType.swordsman : UnitType.archer;
         }
-        
-        // Create unit model with initial velocity toward apex
+
+        // Create unit model with slower initial velocity
         Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
         toApex.normalize();
-        
+
         final unitModel = UnitModel(
           id: 'unit_${DateTime.now().millisecondsSinceEpoch}_$spawned',
           type: unitType,
           position: unitPosition,
           team: team,
-          velocity: toApex.scaled(unitType == UnitType.captain ? 15.0 : 10.0),
+          velocity: toApex.scaled(5.0), // Much slower initial velocity
         );
-        
+
         // Create unit component
         final unitComponent = UnitComponent(model: unitModel);
         add(unitComponent);
@@ -263,29 +333,31 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
       }
       attempts++;
     }
-    
-    // Check if any team has been eliminated
-    checkVictoryConditions();
+
+    debugPrint(
+        'Spawned $spawned units for ${team.name} team. Total: ${currentTeamUnits + spawned}/$maxUnitsPerTeam');
   }
-  
+
   // Legacy method for compatibility with existing code
   void spawnUnitsLegacy(int count) {
     // Use center of screen as default position
     spawnUnitsAtPosition(gameSize / 2);
   }
-  
+
   void spawnUnitsAtPosition(Vector2 position) {
     // Alternate between teams for testing
-    Team team = _units.isEmpty || _units.last.model.team == Team.red ? Team.blue : Team.red;
+    Team team = _units.isEmpty || _units.last.model.team == Team.red
+        ? Team.blue
+        : Team.red;
     spawnUnits(2, position, team);
   }
-  
+
   @override
   void onTap() {
     if (_victoryAchieved) return;
-    
+
     final touchPosition = camera.viewfinder.position;
-    
+
     // Check if we tapped on a unit
     bool tappedOnUnit = false;
     for (final unit in _units) {
@@ -295,7 +367,7 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         break;
       }
     }
-    
+
     // If not tapped on a unit, spawn new units
     if (!tappedOnUnit) {
       spawnUnitsAtPosition(touchPosition);

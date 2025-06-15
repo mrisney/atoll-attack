@@ -82,8 +82,8 @@ class UnitModel {
         // Set movement properties with type-specific defaults
         maxSpeed = maxSpeed ??
             (type == UnitType.captain
-                ? 60.0
-                : (type == UnitType.archer ? 45.0 : 40.0)),
+                ? 30.0 // Reduced from 60.0
+                : (type == UnitType.archer ? 25.0 : 20.0)), // Reduced speeds
         maxForce = maxForce ?? 100.0,
         mass = mass ?? (type == UnitType.swordsman ? 1.5 : 1.0),
         radius = radius ??
@@ -156,72 +156,98 @@ class UnitModel {
     // Skip update if dead
     if (health <= 0) return;
 
-    // Apply flocking behaviors
-    if (units.length > 1) {
-      // Separation - avoid crowding (weak)
-      Vector2 separation = separate(units, desiredSeparation: 20.0);
+    // Find nearby enemy units for combat
+    final nearbyEnemies = units
+        .where((unit) =>
+            unit.team != team &&
+            unit.health > 0 &&
+            position.distanceTo(unit.position) <= attackRange)
+        .toList();
 
-      // Cohesion - stay with the group (stronger)
-      Vector2 cohesion = Vector2.zero();
-      if (units.length > 1) {
-        Vector2 center = Vector2.zero();
-        for (final other in units) {
-          if (other.id != id) {
-            center += other.position;
-          }
-        }
-        center.scale(1.0 / (units.length - 1));
-        Vector2 toCenterForce = center - position;
-        toCenterForce.normalize();
-        cohesion = toCenterForce.scaled(maxSpeed * 0.5);
+    // Combat logic - if enemies are in range, engage them
+    if (nearbyEnemies.isNotEmpty && attackPower > 0) {
+      state = UnitState.attacking;
+
+      // Stop moving toward apex when in combat
+      velocity *= 0.5; // Slow down dramatically in combat
+
+      // Attack the closest enemy
+      final closestEnemy = nearbyEnemies.reduce((a, b) =>
+          position.distanceTo(a.position) < position.distanceTo(b.position)
+              ? a
+              : b);
+
+      // Simple combat - deal damage over time
+      final damagePerSecond = attackPower / 2.0; // Spread damage over time
+      closestEnemy.health -= damagePerSecond * dt;
+
+      // Take counter-damage if enemy can fight back
+      if (closestEnemy.attackPower > 0) {
+        health -= (closestEnemy.attackPower / 2.0) * dt;
       }
 
-      // Apply flocking forces
-      applyForce(separation.scaled(0.2)); // Weak separation
-      applyForce(cohesion); // Strong cohesion
+      // Don't move toward apex while fighting
+      return;
+    } else {
+      // Not in combat, can move toward apex
+      state = isSelected ? UnitState.selected : UnitState.moving;
     }
 
-    // Movement toward apex with minimal randomness
+    // Apply flocking behaviors only with friendly units
+    final friendlyUnits = units
+        .where((unit) => unit.team == team && unit.id != id && unit.health > 0)
+        .toList();
+
+    if (friendlyUnits.isNotEmpty) {
+      // Separation - avoid crowding (stronger)
+      Vector2 separation = _separateFromFriendlies(friendlyUnits);
+
+      // Cohesion - stay with the group (moderate)
+      Vector2 cohesion = _cohesionWithFriendlies(friendlyUnits);
+
+      // Alignment - move in same direction as group (weak)
+      Vector2 alignment = _alignWithFriendlies(friendlyUnits);
+
+      // Apply flocking forces with appropriate weights
+      applyForce(separation.scaled(1.5)); // Strong separation
+      applyForce(cohesion.scaled(0.8)); // Moderate cohesion
+      applyForce(alignment.scaled(0.3)); // Weak alignment
+    }
+
+    // Movement toward apex (only when not fighting)
     if (apex != null && !hasPlantedFlag) {
-      // Get direction to apex
       Vector2 toApex = Vector2(apex.dx, apex.dy) - position;
       double distToApex = toApex.length;
 
-      if (distToApex > 5.0) {
+      if (distToApex > 8.0) {
+        // Increased threshold
         toApex.normalize();
 
-        // Add very slight randomness
-        final rng = math.Random();
-        double randomAngle =
-            (rng.nextDouble() - 0.5) * 0.1; // -0.05 to 0.05 radians
-        double cos = math.cos(randomAngle);
-        double sin = math.sin(randomAngle);
-        double newX = toApex.x * cos - toApex.y * sin;
-        double newY = toApex.x * sin + toApex.y * cos;
-        toApex.x = newX;
-        toApex.y = newY;
-
-        // Set strong velocity toward apex
-        velocity += toApex.scaled(maxSpeed * 0.8);
+        // Much weaker force toward apex to allow flocking
+        velocity += toApex.scaled(maxSpeed * 0.3); // Reduced from 0.8 to 0.3
       }
     }
 
-    // Ensure units are always moving forward
+    // Much slower movement
     if (!hasPlantedFlag) {
-      // If velocity is too low, boost it
-      if (velocity.length < 10.0) {
-        velocity.scale(2.0);
+      // Lower minimum velocity
+      if (velocity.length < 5.0) {
+        // Reduced from 10.0
+        velocity.normalize();
+        velocity.scale(5.0);
       }
 
-      // Cap maximum velocity
-      if (velocity.length > maxSpeed) {
+      // Lower maximum velocity
+      if (velocity.length > maxSpeed * 0.6) {
+        // Cap at 60% of max speed
         velocity.normalize();
-        velocity.scale(maxSpeed);
+        velocity.scale(maxSpeed * 0.6);
       }
     }
 
-    // Apply movement with higher speed - simplified without elevation check here
-    Vector2 newPosition = position + velocity * dt * 2.0;
+    // Apply movement with much slower speed
+    Vector2 newPosition =
+        position + velocity * dt * 0.8; // Reduced from 2.0 to 0.8
     position = newPosition;
 
     // Check if captain reached apex
@@ -236,15 +262,84 @@ class UnitModel {
 
       // Captain sways slightly when flag is planted
       if (type == UnitType.captain) {
-        final now = DateTime.now().millisecondsSinceEpoch / 500;
+        final now = DateTime.now().millisecondsSinceEpoch / 1000; // Slower sway
         Vector2 smallMovement = Vector2(
-          math.sin(now) * 0.5,
-          math.cos(now) * 0.5,
+          math.sin(now) * 0.2, // Reduced movement
+          math.cos(now) * 0.2,
         );
         position += smallMovement * dt;
       }
-    } else {
-      state = isSelected ? UnitState.selected : UnitState.moving;
     }
+  }
+
+  // Helper methods for improved flocking
+  Vector2 _separateFromFriendlies(List<UnitModel> friendlyUnits) {
+    Vector2 steer = Vector2.zero();
+    int count = 0;
+    final double desiredSeparation = radius * 4; // Maintain distance
+
+    for (final other in friendlyUnits) {
+      double distance = position.distanceTo(other.position);
+      if (distance > 0 && distance < desiredSeparation) {
+        Vector2 diff = position - other.position;
+        diff.normalize();
+        diff.scale(1.0 / distance); // Weight by distance
+        steer += diff;
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      steer.scale(1.0 / count);
+      steer.normalize();
+      steer.scale(maxSpeed);
+    }
+
+    return steer;
+  }
+
+  Vector2 _cohesionWithFriendlies(List<UnitModel> friendlyUnits) {
+    Vector2 center = Vector2.zero();
+    int count = 0;
+    final double cohesionRadius = radius * 8; // Look for friends in larger area
+
+    for (final other in friendlyUnits) {
+      double distance = position.distanceTo(other.position);
+      if (distance > 0 && distance < cohesionRadius) {
+        center += other.position;
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      center.scale(1.0 / count);
+      Vector2 seek = center - position;
+      seek.normalize();
+      return seek.scaled(maxSpeed * 0.5);
+    }
+
+    return Vector2.zero();
+  }
+
+  Vector2 _alignWithFriendlies(List<UnitModel> friendlyUnits) {
+    Vector2 avgVelocity = Vector2.zero();
+    int count = 0;
+    final double alignmentRadius = radius * 6;
+
+    for (final other in friendlyUnits) {
+      double distance = position.distanceTo(other.position);
+      if (distance > 0 && distance < alignmentRadius) {
+        avgVelocity += other.velocity;
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      avgVelocity.scale(1.0 / count);
+      avgVelocity.normalize();
+      return avgVelocity.scaled(maxSpeed * 0.4);
+    }
+
+    return Vector2.zero();
   }
 }
