@@ -156,7 +156,7 @@ class ShaderCoordinateExtractor {
 class IslandComponent extends PositionComponent {
   // Island model data
   IslandGridModel? _model;
-  
+
   // Rendering properties
   double amplitude;
   double wavelength;
@@ -235,7 +235,7 @@ class IslandComponent extends PositionComponent {
 
   void _buildIslandModel() {
     if (_shaderContours.isEmpty) return;
-    
+
     _model = IslandGridModel.generate(
       amplitude: amplitude,
       wavelength: wavelength,
@@ -258,7 +258,7 @@ class IslandComponent extends PositionComponent {
     if (showPerimeter) {
       _drawGridOnLand(canvas);
       _drawPerimeter(canvas);
-      
+
       // Draw apex (highpoint) only when perimeter is shown
       final apex = _model?.getApex();
       if (apex != null) {
@@ -296,7 +296,7 @@ class IslandComponent extends PositionComponent {
   /// Draw grid points only on land (inside coastline)
   void _drawGridOnLand(Canvas canvas) {
     if (_model == null) return;
-    
+
     final Paint gridPaint = Paint()
       ..color = Colors.black.withOpacity(0.19)
       ..strokeWidth = 0.7
@@ -363,17 +363,15 @@ class IslandComponent extends PositionComponent {
 
   double getMovementSpeedMultiplier(Vector2 worldPosition) {
     if (_model == null) return 0.0;
-    return _model!.getMovementSpeedMultiplier(Offset(worldPosition.x, worldPosition.y));
+    return _model!
+        .getMovementSpeedMultiplier(Offset(worldPosition.x, worldPosition.y));
   }
 
-  double getElevationAt(Vector2 centered) {
+  double getElevationAt(Vector2 worldPosition) {
     if (_model == null) return 0.0;
-    
-    double minRes = math.min(size.x, size.y);
-    double cx = (centered.x - size.x / 2) / (0.5 * minRes);
-    double cy = (centered.y - size.y / 2) / (0.5 * minRes);
-    
-    return _model!.getElevationAt(Offset(centered.x, centered.y));
+
+    // Pass world coordinates directly to the model - it will handle the conversion
+    return _model!.getElevationAt(Offset(worldPosition.x, worldPosition.y));
   }
 
   Vector2 toCentered(Vector2 worldPosition) {

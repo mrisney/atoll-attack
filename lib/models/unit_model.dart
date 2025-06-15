@@ -220,27 +220,9 @@ class UnitModel {
       }
     }
 
-    // Apply movement with higher speed
+    // Apply movement with higher speed - simplified without elevation check here
     Vector2 newPosition = position + velocity * dt * 2.0;
-
-    // Check if new position would be on land
-    bool willBeOnLand =
-        elevationAtPosition != null && elevationAtPosition > 0.32;
-
-    if (willBeOnLand) {
-      // Safe to move - we're on land
-      position = newPosition;
-    } else {
-      // We'd hit water - adjust direction toward apex
-      if (apex != null) {
-        Vector2 toApex = Vector2(apex.dx, apex.dy) - position;
-        toApex.normalize();
-        velocity = toApex.scaled(maxSpeed * 1.5);
-      } else {
-        // No apex, just turn around
-        velocity = -velocity;
-      }
-    }
+    position = newPosition;
 
     // Check if captain reached apex
     if (type == UnitType.captain) {
