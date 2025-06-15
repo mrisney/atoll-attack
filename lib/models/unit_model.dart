@@ -49,13 +49,16 @@ class UnitModel {
   bool hasPlantedFlag = false;
   Team team;
 
-  // Movement tracking
+  // Movement tracking and irregularity
   Vector2? _lastValidPosition;
   int _stuckCounter = 0;
   double _lastMovementTime = 0.0;
+  double _wanderAngle = 0.0;
+  double _noiseOffset = 0.0;
 
-  // Callback to check if position is on land
+  // Callback to check if position is on land and get terrain info
   bool Function(Vector2)? isOnLandCallback;
+  double Function(Vector2)? getTerrainSpeedCallback;
 
   UnitModel({
     required this.id,
@@ -73,6 +76,7 @@ class UnitModel {
     this.isSelected = false,
     this.path,
     this.isOnLandCallback,
+    this.getTerrainSpeedCallback,
   })  :
         // Set type-specific properties
         attackRange = type == UnitType.archer
@@ -88,14 +92,14 @@ class UnitModel {
         maxHealth = type == UnitType.swordsman
             ? 100.0
             : (type == UnitType.captain ? 60.0 : 80.0),
-        // Enhanced movement properties for better pathfinding
+        // MUCH SLOWER movement properties for realistic gameplay
         maxSpeed = maxSpeed ??
             (type == UnitType.captain
-                ? 60.0 // Fast captain for flag planting
+                ? 25.0 // Slower, more strategic movement
                 : (type == UnitType.archer
-                    ? 50.0
-                    : 45.0)), // Good movement speeds
-        maxForce = maxForce ?? 300.0, // Higher force for better movement
+                    ? 22.0
+                    : 20.0)), // Much slower base speeds
+        maxForce = maxForce ?? 80.0, // Reduced force for smoother movement
         mass = mass ?? (type == UnitType.swordsman ? 1.5 : 1.0),
         radius = radius ??
             (type == UnitType.swordsman
@@ -116,6 +120,8 @@ class UnitModel {
         velocity = velocity ?? Vector2.zero(),
         targetPosition = targetPosition ?? position.clone() {
     _lastValidPosition = position.clone();
+    _noiseOffset =
+        math.Random().nextDouble() * 1000; // Random offset for each unit
   }
 
   void applyForce(Vector2 force) {
@@ -128,7 +134,6 @@ class UnitModel {
 
     double distance = position.distanceTo(Vector2(apex.dx, apex.dy));
     if (distance < radius * 3) {
-      // Slightly larger reach for apex
       hasPlantedFlag = true;
       return true;
     }
@@ -148,17 +153,14 @@ class UnitModel {
     if (apex != null && !hasPlantedFlag) {
       Vector2 apexVector = Vector2(apex.dx, apex.dy);
 
-      // If we have a custom target, use it temporarily, but bias toward apex
+      // If we have a custom target that's significantly different from current position, use it
       if (targetPosition != position) {
         Vector2 toCustomTarget = targetPosition - position;
-        Vector2 toApex = apexVector - position;
-
-        // If custom target is roughly in the direction of apex, use it
-        // Otherwise, prioritize apex
         double customDistance = toCustomTarget.length;
-        double apexDistance = toApex.length;
 
-        if (customDistance < 100 || customDistance < apexDistance * 0.5) {
+        // Use custom target if it's close or if it's a significant movement command
+        if (customDistance > 10.0) {
+          // Only use if it's a meaningful target
           primaryTarget = targetPosition;
         } else {
           primaryTarget = apexVector;
@@ -179,7 +181,7 @@ class UnitModel {
     // Combat logic
     if (nearbyEnemies.isNotEmpty && attackPower > 0) {
       state = UnitState.attacking;
-      velocity *= 0.85; // Slight slowdown in combat
+      velocity *= 0.7; // More significant slowdown in combat
 
       final closestEnemy = nearbyEnemies.reduce((a, b) =>
           position.distanceTo(a.position) < position.distanceTo(b.position)
@@ -196,7 +198,7 @@ class UnitModel {
       state = isSelected ? UnitState.selected : UnitState.moving;
     }
 
-    // Apply light flocking behaviors
+    // Apply very light flocking behaviors
     final friendlyUnits = units
         .where((unit) => unit.team == team && unit.id != id && unit.health > 0)
         .toList();
@@ -206,13 +208,13 @@ class UnitModel {
       Vector2 cohesion = _cohesionWithFriendlies(friendlyUnits);
       Vector2 alignment = _alignWithFriendlies(friendlyUnits);
 
-      // Light flocking forces
-      applyForce(separation.scaled(0.5));
-      applyForce(cohesion.scaled(0.2));
-      applyForce(alignment.scaled(0.1));
+      // Very light flocking forces
+      applyForce(separation.scaled(0.3));
+      applyForce(cohesion.scaled(0.1));
+      applyForce(alignment.scaled(0.05));
     }
 
-    // PRIMARY MOVEMENT: Strong force toward target
+    // PRIMARY MOVEMENT: Add irregularity and terrain effects
     if (primaryTarget != null && !hasPlantedFlag) {
       Vector2 toTarget = primaryTarget - position;
       double distToTarget = toTarget.length;
@@ -220,19 +222,31 @@ class UnitModel {
       if (distToTarget > radius) {
         toTarget.normalize();
 
-        // Very strong targeting force
-        Vector2 targetForce = toTarget.scaled(maxSpeed * 2.0);
-        applyForce(targetForce);
+        // Add wandering behavior for irregular movement
+        Vector2 wanderForce = _calculateWanderForce(dt);
+        Vector2 targetForce =
+            toTarget.scaled(maxSpeed * 0.8); // Reduced target force
+
+        // Combine target seeking with wandering
+        Vector2 combinedForce = targetForce + wanderForce;
+        applyForce(combinedForce);
       }
+    }
+
+    // Apply terrain speed multiplier
+    double terrainSpeedMultiplier = 1.0;
+    if (getTerrainSpeedCallback != null) {
+      terrainSpeedMultiplier = getTerrainSpeedCallback!(position);
     }
 
     // ANTI-STUCK MECHANISM
     _checkAndHandleStuckState(dt, primaryTarget);
 
-    // Limit velocity
-    if (velocity.length > maxSpeed) {
+    // Apply terrain-based speed limit
+    double effectiveMaxSpeed = maxSpeed * terrainSpeedMultiplier;
+    if (velocity.length > effectiveMaxSpeed) {
       velocity.normalize();
-      velocity.scale(maxSpeed);
+      velocity.scale(effectiveMaxSpeed);
     }
 
     // Apply movement with enhanced land checking
@@ -246,7 +260,7 @@ class UnitModel {
         if (!foundValidPath) {
           // If completely stuck, try moving toward center/upward
           Vector2 escapeDirection = _calculateEscapeDirection(primaryTarget);
-          velocity = escapeDirection.scaled(maxSpeed * 0.5);
+          velocity = escapeDirection.scaled(effectiveMaxSpeed * 0.3);
           newPosition = position + velocity * dt;
 
           // If still invalid, just reduce movement
@@ -279,7 +293,7 @@ class UnitModel {
     // Update state
     if (hasPlantedFlag) {
       state = UnitState.idle;
-      velocity *= 0.1; // Almost stop when flag is planted
+      velocity *= 0.05; // Almost stop when flag is planted
 
       // Captain sways slightly when flag is planted
       if (type == UnitType.captain) {
@@ -297,27 +311,46 @@ class UnitModel {
     }
   }
 
+  /// Calculate wandering force for irregular movement
+  Vector2 _calculateWanderForce(double dt) {
+    // Update wander angle with some noise
+    _wanderAngle += (math.Random().nextDouble() - 0.5) * 2.0 * dt;
+
+    // Perlin-like noise for smooth irregular movement
+    double noiseTime = _lastMovementTime * 0.5 + _noiseOffset;
+    double noiseX = math.sin(noiseTime * 1.7) * math.cos(noiseTime * 0.9);
+    double noiseY = math.cos(noiseTime * 1.3) * math.sin(noiseTime * 1.1);
+
+    Vector2 wanderDirection = Vector2(
+      math.cos(_wanderAngle) + noiseX * 0.3,
+      math.sin(_wanderAngle) + noiseY * 0.3,
+    );
+
+    wanderDirection.normalize();
+    return wanderDirection.scaled(maxSpeed * 0.15); // Light wandering force
+  }
+
   /// Check if unit is stuck and handle it
   void _checkAndHandleStuckState(double dt, Vector2? target) {
-    if (_lastMovementTime > 1.0) {
-      // Check every second
+    if (_lastMovementTime > 2.0) {
+      // Check every 2 seconds
       Vector2 movement = position - (_lastValidPosition ?? position);
 
-      if (movement.length < 5.0) {
+      if (movement.length < 3.0) {
         // Barely moved
         _stuckCounter++;
 
-        if (_stuckCounter > 3 && target != null) {
+        if (_stuckCounter > 2 && target != null) {
           // Apply unstuck force
           Vector2 unstuckDirection = _calculateEscapeDirection(target);
-          Vector2 unstuckForce = unstuckDirection.scaled(maxSpeed * 1.5);
+          Vector2 unstuckForce = unstuckDirection.scaled(maxSpeed);
           applyForce(unstuckForce);
 
-          // Add some randomness to break out of local minima
+          // Add randomness to break out of local minima
           double randomAngle = math.Random().nextDouble() * 2 * math.pi;
           Vector2 randomForce = Vector2(
-            math.cos(randomAngle) * maxSpeed * 0.5,
-            math.sin(randomAngle) * maxSpeed * 0.5,
+            math.cos(randomAngle) * maxSpeed * 0.3,
+            math.sin(randomAngle) * maxSpeed * 0.3,
           );
           applyForce(randomForce);
         }
@@ -334,9 +367,9 @@ class UnitModel {
   bool _findValidMovementDirection(double dt) {
     if (isOnLandCallback == null) return false;
 
-    // Try 16 different directions around the current velocity
-    for (int i = 0; i < 16; i++) {
-      double angle = (i * math.pi / 8);
+    // Try 8 different directions around the current velocity
+    for (int i = 0; i < 8; i++) {
+      double angle = (i * math.pi / 4);
       Vector2 rotatedVelocity = Vector2(
         velocity.x * math.cos(angle) - velocity.y * math.sin(angle),
         velocity.x * math.sin(angle) + velocity.y * math.cos(angle),
@@ -367,8 +400,8 @@ class UnitModel {
 
         // Test which perpendicular direction is better
         if (isOnLandCallback != null) {
-          Vector2 test1 = position + perpendicular1 * 20;
-          Vector2 test2 = position + perpendicular2 * 20;
+          Vector2 test1 = position + perpendicular1 * 15;
+          Vector2 test2 = position + perpendicular2 * 15;
 
           bool valid1 = isOnLandCallback!(test1);
           bool valid2 = isOnLandCallback!(test2);
@@ -399,18 +432,18 @@ class UnitModel {
     return Vector2(math.cos(randomAngle), math.sin(randomAngle));
   }
 
-  // Lightweight flocking methods
+  // Much lighter flocking methods
   Vector2 _separateFromFriendlies(List<UnitModel> friendlyUnits) {
     Vector2 steer = Vector2.zero();
     int count = 0;
-    final double desiredSeparation = radius * 2.5;
+    final double desiredSeparation = radius * 2.0; // Smaller separation
 
     for (final other in friendlyUnits) {
       double distance = position.distanceTo(other.position);
       if (distance > 0 && distance < desiredSeparation) {
         Vector2 diff = position - other.position;
         diff.normalize();
-        diff.scale(1.0 / distance); // Weight by distance
+        diff.scale(1.0 / distance);
         steer += diff;
         count++;
       }
@@ -419,7 +452,7 @@ class UnitModel {
     if (count > 0) {
       steer.scale(1.0 / count);
       steer.normalize();
-      steer.scale(maxSpeed * 0.4);
+      steer.scale(maxSpeed * 0.2); // Much weaker
     }
 
     return steer;
@@ -428,7 +461,7 @@ class UnitModel {
   Vector2 _cohesionWithFriendlies(List<UnitModel> friendlyUnits) {
     Vector2 center = Vector2.zero();
     int count = 0;
-    final double cohesionRadius = radius * 5;
+    final double cohesionRadius = radius * 3; // Smaller radius
 
     for (final other in friendlyUnits) {
       double distance = position.distanceTo(other.position);
@@ -442,7 +475,7 @@ class UnitModel {
       center.scale(1.0 / count);
       Vector2 seek = center - position;
       seek.normalize();
-      return seek.scaled(maxSpeed * 0.15);
+      return seek.scaled(maxSpeed * 0.08); // Much weaker
     }
 
     return Vector2.zero();
@@ -451,7 +484,7 @@ class UnitModel {
   Vector2 _alignWithFriendlies(List<UnitModel> friendlyUnits) {
     Vector2 avgVelocity = Vector2.zero();
     int count = 0;
-    final double alignmentRadius = radius * 4;
+    final double alignmentRadius = radius * 2.5; // Smaller radius
 
     for (final other in friendlyUnits) {
       double distance = position.distanceTo(other.position);
@@ -464,7 +497,7 @@ class UnitModel {
     if (count > 0) {
       avgVelocity.scale(1.0 / count);
       avgVelocity.normalize();
-      return avgVelocity.scaled(maxSpeed * 0.1);
+      return avgVelocity.scaled(maxSpeed * 0.05); // Much weaker
     }
 
     return Vector2.zero();

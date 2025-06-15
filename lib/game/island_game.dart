@@ -1,9 +1,9 @@
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
-import 'package:flame/input.dart'; // Add this import for gesture detectors
+import 'package:flame/input.dart';
 import 'package:flutter/material.dart';
-import 'dart:math' as math; // Add this import for Random
+import 'dart:math' as math;
 import 'island_component.dart';
 import 'unit_component.dart';
 import '../models/unit_model.dart';
@@ -264,14 +264,13 @@ class IslandGame extends FlameGame
   void _moveSelectedUnits(Vector2 target) {
     if (_selectedUnits.isEmpty) return;
 
-    final apex = getIslandApex();
-
     for (final unit in _selectedUnits) {
       if (isOnLand(target)) {
-        // Set direct target instead of always going to apex
+        // Set direct target - make sure it's different from current position
         unit.model.targetPosition = target.clone();
         unit.model.path = null; // Clear any existing path
-        debugPrint('Moving ${unit.model.type.name} to $target');
+        debugPrint(
+            'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
       }
     }
   }
@@ -298,24 +297,28 @@ class IslandGame extends FlameGame
         apex: getIslandApex(),
       );
 
+      bool unitsRemoved = false;
       for (final unitId in _currentGameState.unitsToRemove) {
         final unitToRemove =
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
           _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
-
-          // Remove from selection if selected
           _selectedUnits.remove(unitToRemove);
-
           unitToRemove.playDeathAnimation();
+          unitsRemoved = true;
 
           Future.delayed(const Duration(milliseconds: 800), () {
             if (unitToRemove.isMounted) {
               unitToRemove.removeFromParent();
               _units.remove(unitToRemove);
+              forceRefreshUnitCounts(); // Refresh after actual removal
             }
           });
         }
+      }
+
+      if (unitsRemoved) {
+        forceRefreshUnitCounts();
       }
 
       if (_currentGameState.victoryState.hasWinner && !_victoryAchieved) {
@@ -332,6 +335,7 @@ class IslandGame extends FlameGame
 
         debugPrint(
             '${winner == Team.blue ? "Blue" : "Red"} team wins! $reasonText');
+        forceRefreshUnitCounts(); // Refresh on victory
       }
     }
   }
@@ -361,6 +365,16 @@ class IslandGame extends FlameGame
           _redSwordsmenSpawned =
               (_redSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
       }
+    }
+
+    // Force refresh after decrementing
+    forceRefreshUnitCounts();
+  }
+
+  // Add a method to force refresh unit counts
+  void forceRefreshUnitCounts() {
+    if (onUnitCountsChanged != null) {
+      onUnitCountsChanged!();
     }
   }
 
@@ -464,7 +478,7 @@ class IslandGame extends FlameGame
       return;
     }
 
-    final rng = math.Random(); // Fixed Random import
+    final rng = math.Random();
     int attempts = 0;
 
     final coastline = _island.getCoastline();
@@ -474,7 +488,6 @@ class IslandGame extends FlameGame
     if (apex == null) return;
 
     while (attempts < 100) {
-      // Increased attempts
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
 
@@ -495,8 +508,10 @@ class IslandGame extends FlameGame
           type: unitType,
           position: unitPosition,
           team: team,
-          velocity: toApex.scaled(15.0), // Initial velocity toward apex
+          velocity: toApex.scaled(8.0), // Slower initial velocity
           isOnLandCallback: isOnLand,
+          getTerrainSpeedCallback:
+              getMovementSpeedMultiplier, // Add terrain callback
         );
 
         // Set the target to apex immediately
@@ -528,6 +543,9 @@ class IslandGame extends FlameGame
 
         debugPrint(
             'Spawned ${unitType.name} for ${team.name} team at $unitPosition. Remaining: ${_getRemainingForType(team, unitType)}');
+
+        // Force UI refresh after spawning
+        forceRefreshUnitCounts();
         return;
       }
       attempts++;
@@ -578,14 +596,16 @@ class IslandGame extends FlameGame
     if (_isDragging && _selectionStart != null && _selectionEnd != null) {
       final distance = (_selectionEnd! - _selectionStart!).length;
 
-      if (distance > 10) {
+      if (distance > 15) {
+        // Increased threshold for drag vs click
         // Drag selection
         _selectUnitsInBox(_selectionStart!, _selectionEnd!);
       } else {
-        // Single tap - move selected units or spawn
+        // Single click - check if we have selected units first
         if (_selectedUnits.isNotEmpty) {
           _moveSelectedUnits(_selectionStart!);
         } else {
+          // No selection, spawn units
           spawnUnitsAtPosition(_selectionStart!);
         }
       }
@@ -615,7 +635,7 @@ class IslandGame extends FlameGame
   void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
-    final rng = math.Random(); // Fixed Random import
+    final rng = math.Random();
     int attempts = 0, spawned = 0;
     final int maxUnits = 2;
     bool hasCaptain = _units
@@ -628,7 +648,6 @@ class IslandGame extends FlameGame
     if (apex == null) return;
 
     while (spawned < maxUnits && attempts < maxUnits * 30) {
-      // More attempts
       final spawnPoint = coastline[rng.nextInt(coastline.length)];
       Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
 
@@ -670,8 +689,10 @@ class IslandGame extends FlameGame
           type: unitType,
           position: unitPosition,
           team: team,
-          velocity: toApex.scaled(15.0), // Good initial velocity
+          velocity: toApex.scaled(8.0), // Slower velocity
           isOnLandCallback: isOnLand,
+          getTerrainSpeedCallback:
+              getMovementSpeedMultiplier, // Add terrain callback
         );
 
         // Immediately set target to apex
@@ -708,5 +729,10 @@ class IslandGame extends FlameGame
 
     debugPrint(
         'Spawned $spawned units for ${team.name} team. Blue remaining: $blueUnitsRemaining, Red remaining: $redUnitsRemaining');
+
+    // Force UI refresh after spawning
+    if (spawned > 0) {
+      forceRefreshUnitCounts();
+    }
   }
 }

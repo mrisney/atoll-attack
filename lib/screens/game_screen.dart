@@ -19,12 +19,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool showControls = false;
   bool showHUD = true;
 
+  // Define a custom gold color since Colors.gold doesn't exist
+  static const Color goldColor = Color(0xFFFFD700);
+
   @override
   Widget build(BuildContext context) {
     final gameNotifier = ref.watch(gameProvider.notifier);
     final game = ref.watch(gameProvider);
     final showPerimeter = ref.watch(showPerimeterProvider);
+
+    // Watch the reactive providers for unit counts and game stats
     final unitCounts = ref.watch(unitCountsProvider);
+    final gameStats = ref.watch(gameStatsProvider);
 
     final screenSize = MediaQuery.of(context).size;
     final isLandscape = screenSize.width > screenSize.height;
@@ -32,16 +38,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     // Set up the callback to notify when unit counts change
     game.onUnitCountsChanged = () {
-      gameNotifier.notifyUnitCountsChanged();
-    };
-
-    // Force periodic updates to keep HUD in sync
-    ref.listen(gameProvider, (previous, next) {
-      // This will trigger rebuilds when game state changes
       if (mounted) {
+        gameNotifier.notifyUnitCountsChanged();
+        // Also force a rebuild of this widget
         setState(() {});
       }
-    });
+    };
 
     return Scaffold(
       body: Stack(
@@ -49,26 +51,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           // Game widget takes full screen
           GameWidget(game: game),
 
-          // Game HUD with responsive positioning
+          // Game HUD with reactive data
           Positioned(
             top: safePadding.top + (isLandscape ? 8 : 12),
             left: isLandscape ? 12 : 16,
             right: isLandscape ? screenSize.width * 0.4 : 16,
-            child: GameHUD(
-              blueUnits: unitCounts['blueActive'] ?? 0,
-              redUnits: unitCounts['redActive'] ?? 0,
-              blueHealthPercent: game.blueHealthPercent,
-              redHealthPercent: game.redHealthPercent,
-              isVisible: showHUD,
-              onToggleVisibility: () => setState(() => showHUD = !showHUD),
-              selectedUnit: game.selectedUnit?.model,
-              blueUnitsRemaining: unitCounts['blueRemaining'] ?? 0,
-              redUnitsRemaining: unitCounts['redRemaining'] ?? 0,
-              showPerimeter: showPerimeter,
-              onPerimeterToggle: (value) {
-                ref.read(showPerimeterProvider.notifier).state = value;
-              },
-            ),
+            child: _buildGameHUD(gameStats, showPerimeter, game),
           ),
 
           // Control buttons - responsive positioning
@@ -163,16 +151,127 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   color: Colors.black.withOpacity(0.6),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  'Landscape Mode • Tap units to select • Drag to move',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 10,
-                  ),
-                ),
+                child: _buildDebugInfo(gameStats),
               ),
             ),
+
+          // Victory notification
+          _buildVictoryNotification(gameStats, screenSize),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGameHUD(dynamic gameStats, bool showPerimeter, dynamic game) {
+    // Check if gameStats is AsyncValue or Map
+    if (gameStats is AsyncValue) {
+      return gameStats.when(
+        data: (stats) => GameHUD(
+          blueUnits: stats['blueUnits'] ?? 0,
+          redUnits: stats['redUnits'] ?? 0,
+          blueHealthPercent: stats['blueHealth'] ?? 0.0,
+          redHealthPercent: stats['redHealth'] ?? 0.0,
+          isVisible: showHUD,
+          onToggleVisibility: () => setState(() => showHUD = !showHUD),
+          selectedUnit: game.selectedUnit?.model,
+          blueUnitsRemaining: stats['blueRemaining'] ?? 0,
+          redUnitsRemaining: stats['redRemaining'] ?? 0,
+          showPerimeter: showPerimeter,
+          onPerimeterToggle: (value) {
+            ref.read(showPerimeterProvider.notifier).state = value;
+          },
+        ),
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+      );
+    } else {
+      // Handle as Map<String, dynamic>
+      final stats = gameStats as Map<String, dynamic>;
+      return GameHUD(
+        blueUnits: stats['blueUnits'] ?? 0,
+        redUnits: stats['redUnits'] ?? 0,
+        blueHealthPercent: stats['blueHealth'] ?? 0.0,
+        redHealthPercent: stats['redHealth'] ?? 0.0,
+        isVisible: showHUD,
+        onToggleVisibility: () => setState(() => showHUD = !showHUD),
+        selectedUnit: game.selectedUnit?.model,
+        blueUnitsRemaining: stats['blueRemaining'] ?? 0,
+        redUnitsRemaining: stats['redRemaining'] ?? 0,
+        showPerimeter: showPerimeter,
+        onPerimeterToggle: (value) {
+          ref.read(showPerimeterProvider.notifier).state = value;
+        },
+      );
+    }
+  }
+
+  Widget _buildDebugInfo(dynamic gameStats) {
+    if (gameStats is AsyncValue) {
+      return gameStats.when(
+        data: (stats) => Text(
+          'Blue: ${stats['blueUnits']} | Red: ${stats['redUnits']} | Selected: ${stats['selectedUnitCount']}',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.8),
+            fontSize: 10,
+          ),
+        ),
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+      );
+    } else {
+      final stats = gameStats as Map<String, dynamic>;
+      return Text(
+        'Blue: ${stats['blueUnits']} | Red: ${stats['redUnits']} | Selected: ${stats['selectedUnitCount']}',
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.8),
+          fontSize: 10,
+        ),
+      );
+    }
+  }
+
+  Widget _buildVictoryNotification(dynamic gameStats, Size screenSize) {
+    bool isVictoryAchieved = false;
+
+    if (gameStats is AsyncValue) {
+      return gameStats.when(
+        data: (stats) {
+          isVictoryAchieved = stats['isVictoryAchieved'] == true;
+          return _victoryWidget(isVictoryAchieved, screenSize);
+        },
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+      );
+    } else {
+      final stats = gameStats as Map<String, dynamic>;
+      isVictoryAchieved = stats['isVictoryAchieved'] == true;
+      return _victoryWidget(isVictoryAchieved, screenSize);
+    }
+  }
+
+  Widget _victoryWidget(bool isVictoryAchieved, Size screenSize) {
+    if (!isVictoryAchieved) return const SizedBox.shrink();
+
+    return Positioned(
+      top: screenSize.height * 0.3,
+      left: 50,
+      right: 50,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: goldColor, width: 2),
+        ),
+        child: const Text(
+          '🎉 VICTORY! 🎉',
+          style: TextStyle(
+            color: goldColor,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }
