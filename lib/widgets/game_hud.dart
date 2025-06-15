@@ -32,147 +32,138 @@ class GameHUD extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isVisible) {
-      return Positioned(
-        top: 50,
-        left: 16,
-        child: FloatingActionButton(
-          mini: true,
-          heroTag: "hudToggle",
-          backgroundColor: Colors.black.withOpacity(0.5),
-          onPressed: onToggleVisibility,
-          child: const Icon(Icons.info_outline, color: Colors.white),
-        ),
+      return FloatingActionButton(
+        mini: true,
+        heroTag: "hudToggle",
+        backgroundColor: Colors.black.withOpacity(0.5),
+        onPressed: onToggleVisibility,
+        child: const Icon(Icons.info_outline, color: Colors.white),
       );
     }
 
-    return Positioned(
-      top: 50,
-      left: 16,
-      right: 16,
-      child: Column(
-        children: [
-          // Main battle status card with perimeter toggle
+    return Column(
+      children: [
+        // Main battle status card with perimeter toggle
+        Card(
+          color: Colors.black.withOpacity(0.4), // More transparent
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Battle Status',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Perimeter toggle moved here
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.grid_on,
+                                color: Colors.white.withOpacity(0.7),
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Grid',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                height: 16,
+                                child: Switch(
+                                  value: showPerimeter,
+                                  onChanged: onPerimeterToggle,
+                                  activeColor: Colors.purple.shade300,
+                                  inactiveThumbColor: Colors.grey.shade400,
+                                  inactiveTrackColor:
+                                      Colors.grey.withOpacity(0.2),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.close,
+                              color: Colors.white70, size: 20),
+                          onPressed: onToggleVisibility,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTeamStatus(
+                        'Blue Team',
+                        blueUnits,
+                        blueHealthPercent,
+                        Colors.blue,
+                        blueUnitsRemaining,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTeamStatus(
+                        'Red Team',
+                        redUnits,
+                        redHealthPercent,
+                        Colors.red,
+                        redUnitsRemaining,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Selected unit info card
+        if (selectedUnit != null) ...[
+          const SizedBox(height: 8),
           Card(
             color: Colors.black.withOpacity(0.4), // More transparent
             child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Battle Status',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Perimeter toggle moved here
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.grid_on,
-                                  color: Colors.white.withOpacity(0.7),
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Grid',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                SizedBox(
-                                  height: 16,
-                                  child: Switch(
-                                    value: showPerimeter,
-                                    onChanged: onPerimeterToggle,
-                                    activeColor: Colors.purple.shade300,
-                                    inactiveThumbColor: Colors.grey.shade400,
-                                    inactiveTrackColor:
-                                        Colors.grey.withOpacity(0.2),
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.close,
-                                color: Colors.white70, size: 20),
-                            onPressed: onToggleVisibility,
-                            constraints: const BoxConstraints(),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildTeamStatus(
-                          'Blue Team',
-                          blueUnits,
-                          blueHealthPercent,
-                          Colors.blue,
-                          blueUnitsRemaining,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildTeamStatus(
-                          'Red Team',
-                          redUnits,
-                          redHealthPercent,
-                          Colors.red,
-                          redUnitsRemaining,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              padding: const EdgeInsets.all(10),
+              child: _buildSelectedUnitInfo(selectedUnit!),
             ),
           ),
-
-          // Selected unit info card
-          if (selectedUnit != null) ...[
-            const SizedBox(height: 8),
-            Card(
-              color: Colors.black.withOpacity(0.4), // More transparent
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: _buildSelectedUnitInfo(selectedUnit!),
-              ),
-            ),
-          ],
         ],
-      ),
+      ],
     );
   }
 

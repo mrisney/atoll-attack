@@ -37,13 +37,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final safePadding = MediaQuery.of(context).padding;
 
     // Set up the callback to notify when unit counts change
-    game.onUnitCountsChanged = () {
-      if (mounted) {
-        gameNotifier.notifyUnitCountsChanged();
-        // Also force a rebuild of this widget
-        setState(() {});
-      }
-    };
+    // Use addPostFrameCallback to avoid setState during build
+    if (game.onUnitCountsChanged == null) {
+      game.onUnitCountsChanged = () {
+        if (mounted) {
+          gameNotifier.notifyUnitCountsChanged();
+          // Schedule setState for after the current build frame
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {});
+            }
+          });
+        }
+      };
+    }
 
     return Scaffold(
       body: Stack(
@@ -160,12 +167,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildGameHUD(dynamic gameStats, bool showPerimeter, dynamic game,
       EdgeInsets safePadding, bool isLandscape, Size screenSize) {
-    return Positioned(
-      top: safePadding.top + (isLandscape ? 8 : 12),
-      left: isLandscape ? 12 : 16,
-      right: isLandscape ? screenSize.width * 0.4 : 16,
-      child: _buildGameHUDContent(gameStats, showPerimeter, game),
-    );
+    final hudContent = _buildGameHUDContent(gameStats, showPerimeter, game);
+
+    // Handle the positioning based on HUD visibility
+    if (!showHUD) {
+      // When HUD is collapsed, position just the toggle button
+      return Positioned(
+        top: safePadding.top + (isLandscape ? 8 : 12),
+        left: isLandscape ? 12 : 16,
+        child: hudContent,
+      );
+    } else {
+      // When HUD is visible, use full positioning
+      return Positioned(
+        top: safePadding.top + (isLandscape ? 8 : 12),
+        left: isLandscape ? 12 : 16,
+        right: isLandscape ? screenSize.width * 0.4 : 16,
+        child: hudContent,
+      );
+    }
   }
 
   Widget _buildGameHUDContent(
