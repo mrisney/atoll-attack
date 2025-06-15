@@ -9,6 +9,7 @@ import '../rules/victory_conditions.dart';
 import '../rules/combat_rules.dart';
 import '../rules/game_rules_engine.dart';
 import '../services/pathfinding_service.dart';
+import '../config.dart';
 import 'dart:math';
 
 class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
@@ -28,9 +29,9 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   bool useAssets = false; // Toggle for using artwork vs simple shapes
 
   // Unit limit tracking with proper counts per type
-  static const int maxCaptainsPerTeam = 1;
-  static const int maxArchersPerTeam = 12;
-  static const int maxSwordsmenPerTeam = 12;
+  static const int maxCaptainsPerTeam = kMaxCaptainsPerTeam;
+  static const int maxArchersPerTeam = kMaxArchersPerTeam;
+  static const int maxSwordsmenPerTeam = kMaxSwordsmenPerTeam;
 
   int _blueCaptainsSpawned = 0;
   int _blueArchersSpawned = 0;
@@ -42,8 +43,10 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   // Rules engine properties
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
-  static const double _rulesUpdateInterval =
-      0.1; // Update rules 10 times per second
+  static const double _rulesUpdateInterval = kRulesUpdateInterval;
+
+  // Callback to notify providers when unit counts change
+  void Function()? onUnitCountsChanged;
 
   IslandGame({
     required this.amplitude,
@@ -254,6 +257,9 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
           // Decrease spawn counter when unit dies based on type
           _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
 
+          // Notify providers of unit count change
+          onUnitCountsChanged?.call();
+
           // Add death animation before removal
           unitToRemove.playDeathAnimation();
 
@@ -437,6 +443,9 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
           }
         }
 
+        // Notify providers of unit count change
+        onUnitCountsChanged?.call();
+
         debugPrint(
             'Spawned ${unitType.name} for ${team.name} team. Remaining: ${_getRemainingForType(team, unitType)}');
         return;
@@ -564,6 +573,11 @@ class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
         spawned++;
       }
       attempts++;
+    }
+
+    // Notify providers of unit count change if any units were spawned
+    if (spawned > 0) {
+      onUnitCountsChanged?.call();
     }
 
     debugPrint(

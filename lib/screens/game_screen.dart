@@ -26,6 +26,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final showPerimeter = ref.watch(showPerimeterProvider);
     final unitCounts = ref.watch(unitCountsProvider);
 
+    // Set up the callback to notify when unit counts change
+    game.onUnitCountsChanged = () {
+      gameNotifier.notifyUnitCountsChanged();
+    };
+
     // Force periodic updates to keep HUD in sync
     ref.listen(gameProvider, (previous, next) {
       // This will trigger rebuilds when game state changes

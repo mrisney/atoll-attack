@@ -3,6 +3,7 @@ import 'package:riverpod/riverpod.dart';
 import '../providers/game_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/unit_model.dart';
+import '../config.dart';
 
 class GameControlsPanel extends ConsumerWidget {
   final VoidCallback? onClose;
@@ -11,17 +12,18 @@ class GameControlsPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final game = ref.watch(gameProvider);
+    final unitCounts = ref.watch(unitCountsProvider);
 
     return Material(
       color: Colors.transparent,
       child: IntrinsicWidth(
         child: Container(
           constraints: const BoxConstraints(
-            maxWidth: 300,
-            minWidth: 280,
+            maxWidth: 320,
+            minWidth: 300,
           ),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.7),
+            color: Colors.black.withOpacity(0.75),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: Colors.white.withOpacity(0.2),
@@ -29,10 +31,11 @@ class GameControlsPanel extends ConsumerWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Header with close button
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -45,19 +48,21 @@ class GameControlsPanel extends ConsumerWidget {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70),
+                      icon: const Icon(Icons.close,
+                          color: Colors.white70, size: 20),
                       onPressed: onClose,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
 
-                // Unit count display with breakdown
+                // Compact unit count display
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(6),
+                    color: Colors.grey.withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
                     children: [
@@ -65,8 +70,8 @@ class GameControlsPanel extends ConsumerWidget {
                       Row(
                         children: [
                           Container(
-                            width: 12,
-                            height: 12,
+                            width: 10,
+                            height: 10,
                             decoration: const BoxDecoration(
                               color: Colors.blue,
                               shape: BoxShape.circle,
@@ -82,11 +87,20 @@ class GameControlsPanel extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            'C:${game.blueCaptainsRemaining} A:${game.blueArchersRemaining} S:${game.blueSwordsmenRemaining}',
+                            'C:${unitCounts['blueCaptainsRemaining']} A:${unitCounts['blueArchersRemaining']} S:${unitCounts['blueSwordsmenRemaining']}',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 11,
                               fontFamily: 'monospace',
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Total: ${unitCounts['blueRemaining']}',
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
@@ -96,8 +110,8 @@ class GameControlsPanel extends ConsumerWidget {
                       Row(
                         children: [
                           Container(
-                            width: 12,
-                            height: 12,
+                            width: 10,
+                            height: 10,
                             decoration: const BoxDecoration(
                               color: Colors.red,
                               shape: BoxShape.circle,
@@ -113,111 +127,121 @@ class GameControlsPanel extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            'C:${game.redCaptainsRemaining} A:${game.redArchersRemaining} S:${game.redSwordsmenRemaining}',
+                            'C:${unitCounts['redCaptainsRemaining']} A:${unitCounts['redArchersRemaining']} S:${unitCounts['redSwordsmenRemaining']}',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 11,
                               fontFamily: 'monospace',
                             ),
                           ),
+                          const Spacer(),
+                          Text(
+                            'Total: ${unitCounts['redRemaining']}',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'C=Captain(1) A=Archer(12) S=Swordsman(12)',
-                        style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: 10,
+                      Text(
+                        'C=Captain($kMaxCaptainsPerTeam) A=Archer($kMaxArchersPerTeam) S=Swordsman($kMaxSwordsmenPerTeam)',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 9,
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
-                // Individual unit spawn buttons for Blue team
+                // Blue team spawn buttons (more compact)
                 const Text(
                   'Spawn Blue Team:',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Captain',
                       Icons.star,
                       Colors.blue.shade700,
                       () => game.spawnSingleUnit(UnitType.captain, Team.blue),
-                      game.blueCaptainsRemaining > 0,
-                      '${game.blueCaptainsRemaining}',
+                      unitCounts['blueCaptainsRemaining']! > 0,
+                      '${unitCounts['blueCaptainsRemaining']}',
                     ),
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Archer',
                       Icons.sports_esports,
                       Colors.blue.shade500,
                       () => game.spawnSingleUnit(UnitType.archer, Team.blue),
-                      game.blueArchersRemaining > 0,
-                      '${game.blueArchersRemaining}',
+                      unitCounts['blueArchersRemaining']! > 0,
+                      '${unitCounts['blueArchersRemaining']}',
                     ),
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Swordsman',
                       Icons.shield,
                       Colors.blue.shade300,
                       () => game.spawnSingleUnit(UnitType.swordsman, Team.blue),
-                      game.blueSwordsmenRemaining > 0,
-                      '${game.blueSwordsmenRemaining}',
+                      unitCounts['blueSwordsmenRemaining']! > 0,
+                      '${unitCounts['blueSwordsmenRemaining']}',
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
 
-                // Individual unit spawn buttons for Red team
+                // Red team spawn buttons (more compact)
                 const Text(
                   'Spawn Red Team:',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Captain',
                       Icons.star,
                       Colors.red.shade700,
                       () => game.spawnSingleUnit(UnitType.captain, Team.red),
-                      game.redCaptainsRemaining > 0,
-                      '${game.redCaptainsRemaining}',
+                      unitCounts['redCaptainsRemaining']! > 0,
+                      '${unitCounts['redCaptainsRemaining']}',
                     ),
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Archer',
                       Icons.sports_esports,
                       Colors.red.shade500,
                       () => game.spawnSingleUnit(UnitType.archer, Team.red),
-                      game.redArchersRemaining > 0,
-                      '${game.redArchersRemaining}',
+                      unitCounts['redArchersRemaining']! > 0,
+                      '${unitCounts['redArchersRemaining']}',
                     ),
-                    _buildUnitButton(
+                    _buildCompactUnitButton(
                       context,
                       'Swordsman',
                       Icons.shield,
                       Colors.red.shade300,
                       () => game.spawnSingleUnit(UnitType.swordsman, Team.red),
-                      game.redSwordsmenRemaining > 0,
-                      '${game.redSwordsmenRemaining}',
+                      unitCounts['redSwordsmenRemaining']! > 0,
+                      '${unitCounts['redSwordsmenRemaining']}',
                     ),
                   ],
                 ),
@@ -229,7 +253,7 @@ class GameControlsPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildUnitButton(
+  Widget _buildCompactUnitButton(
     BuildContext context,
     String label,
     IconData icon,
@@ -239,36 +263,35 @@ class GameControlsPanel extends ConsumerWidget {
     String count,
   ) {
     return SizedBox(
-      width: 75,
-      height: 70,
+      width: 80,
+      height: 55, // Reduced height
       child: ElevatedButton(
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: enabled ? color : Colors.grey.shade600,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           textStyle: const TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 10,
+            fontSize: 9,
           ),
           elevation: enabled ? 2 : 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16),
-            const SizedBox(height: 2),
+            Icon(icon, size: 14),
+            const SizedBox(height: 1),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 9),
+              style: const TextStyle(fontSize: 8),
             ),
-            const SizedBox(height: 2),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: enabled
                     ? Colors.black.withOpacity(0.3)
@@ -278,7 +301,7 @@ class GameControlsPanel extends ConsumerWidget {
               child: Text(
                 count,
                 style: const TextStyle(
-                  fontSize: 8,
+                  fontSize: 9,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'monospace',
                 ),

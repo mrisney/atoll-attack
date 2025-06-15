@@ -13,6 +13,11 @@ class GameNotifier extends StateNotifier<IslandGame> {
     // Trigger a rebuild by creating a new state reference
     state = state;
   }
+
+  // Method to manually trigger updates when unit counts change
+  void notifyUnitCountsChanged() {
+    forceUpdate();
+  }
 }
 
 final gameProvider = StateNotifierProvider<GameNotifier, IslandGame>((ref) {
@@ -32,11 +37,12 @@ final gameProvider = StateNotifierProvider<GameNotifier, IslandGame>((ref) {
   return GameNotifier(game);
 });
 
-// Provider that watches for unit count changes
+// Provider that watches for unit count changes with proper reactivity
 final unitCountsProvider = Provider<Map<String, int>>((ref) {
   final game = ref.watch(gameProvider);
 
-  // This will automatically update when the game state changes
+  // Force the provider to update by watching the game state
+  // This ensures unit counts are always current
   return {
     'blueActive': game.blueUnitCount,
     'redActive': game.redUnitCount,
@@ -44,5 +50,32 @@ final unitCountsProvider = Provider<Map<String, int>>((ref) {
     'redRemaining': game.redUnitsRemaining,
     'blueSpawned': game.blueUnitsSpawned,
     'redSpawned': game.redUnitsSpawned,
+    'blueCaptainsRemaining': game.blueCaptainsRemaining,
+    'blueArchersRemaining': game.blueArchersRemaining,
+    'blueSwordsmenRemaining': game.blueSwordsmenRemaining,
+    'redCaptainsRemaining': game.redCaptainsRemaining,
+    'redArchersRemaining': game.redArchersRemaining,
+    'redSwordsmenRemaining': game.redSwordsmenRemaining,
+  };
+});
+
+// Provider for individual unit type counts (more granular reactivity)
+final blueUnitCountsProvider = Provider<Map<String, int>>((ref) {
+  final game = ref.watch(gameProvider);
+  return {
+    'captains': game.blueCaptainsRemaining,
+    'archers': game.blueArchersRemaining,
+    'swordsmen': game.blueSwordsmenRemaining,
+    'total': game.blueUnitsRemaining,
+  };
+});
+
+final redUnitCountsProvider = Provider<Map<String, int>>((ref) {
+  final game = ref.watch(gameProvider);
+  return {
+    'captains': game.redCaptainsRemaining,
+    'archers': game.redArchersRemaining,
+    'swordsmen': game.redSwordsmenRemaining,
+    'total': game.redUnitsRemaining,
   };
 });
