@@ -3,6 +3,7 @@ import 'package:riverpod/riverpod.dart';
 import '../providers/show_perimeter_provider.dart';
 import '../providers/game_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/unit_model.dart';
 
 class GameControlsPanel extends ConsumerWidget {
   final VoidCallback? onClose;
@@ -52,7 +53,7 @@ class GameControlsPanel extends ConsumerWidget {
             ElevatedButton.icon(
               icon: const Icon(Icons.group),
               label: const Text('Spawn 12 Units'),
-              onPressed: () => game.spawnUnits(12),
+              onPressed: () => game.spawnUnitsLegacy(12),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange.shade700,
                 foregroundColor: Colors.white,

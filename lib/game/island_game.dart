@@ -1,11 +1,16 @@
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
+import 'package:flame/input.dart';
 import 'package:flutter/material.dart';
 import 'island_component.dart';
 import 'unit_component.dart';
+import '../models/unit_model.dart';
+import '../rules/victory_conditions.dart';
+import '../rules/combat_rules.dart';
+import '../services/pathfinding_service.dart';
 import 'dart:math';
 
-class IslandGame extends FlameGame with HasCollisionDetection {
+class IslandGame extends FlameGame with HasCollisionDetection, TapDetector {
   double amplitude;
   double wavelength;
   double bias;
@@ -16,6 +21,10 @@ class IslandGame extends FlameGame with HasCollisionDetection {
 
   late IslandComponent _island;
   bool _isLoaded = false;
+  final List<UnitComponent> _units = [];
+  UnitComponent? _selectedUnit;
+  bool _victoryAchieved = false;
+  bool useAssets = false; // Toggle for using artwork vs simple shapes
 
   IslandGame({
     required this.amplitude,
@@ -123,20 +132,173 @@ class IslandGame extends FlameGame with HasCollisionDetection {
     return 1.0;
   }
 
-  void spawnUnits(int count) {
+  Offset? getIslandApex() {
+    if (_isLoaded && _island.isMounted) {
+      return _island.getApexPosition();
+    }
+    return null;
+  }
+  
+  List<Offset> getCoastline() {
+    if (_isLoaded && _island.isMounted) {
+      return _island.getCoastline();
+    }
+    return [];
+  }
+
+  List<UnitComponent> getAllUnits() {
+    return _units;
+  }
+  
+  // Pathfinding service
+  PathfindingService? _pathfindingService;
+  
+  PathfindingService? getPathfindingService() {
+    if (_pathfindingService == null && _isLoaded && _island.isMounted) {
+      final islandModel = _island.getIslandGridModel();
+      if (islandModel != null) {
+        _pathfindingService = PathfindingService(islandModel);
+      }
+    }
+    return _pathfindingService;
+  }
+  
+  void captainReachedApex(UnitComponent captain) {
+    if (!_victoryAchieved) {
+      _victoryAchieved = true;
+      debugPrint('Victory! Captain has planted the flag at the apex!');
+      // Here you could trigger victory animations, sounds, etc.
+    }
+  }
+  
+  bool isVictoryAchieved() {
+    return _victoryAchieved;
+  }
+
+  void selectUnit(Vector2 position) {
+    // Deselect current unit if any
+    if (_selectedUnit != null) {
+      _selectedUnit!.setSelected(false);
+      _selectedUnit = null;
+    }
+    
+    // Find unit under touch position
+    for (final unit in _units) {
+      if (unit.containsPoint(position)) {
+        unit.setSelected(true);
+        _selectedUnit = unit;
+        break;
+      }
+    }
+  }
+  
+  void moveSelectedUnit(Vector2 target) {
+    if (_selectedUnit != null && isOnLand(target)) {
+      _selectedUnit!.setTargetPosition(target);
+    }
+  }
+
+  void checkVictoryConditions() {
+    // Get all unit models
+    final unitModels = _units.map((u) => u.model).toList();
+    
+    // Use victory conditions class to check for winners
+    final winningTeam = VictoryConditions.getWinningTeam(unitModels);
+    
+    if (winningTeam != null) {
+      _victoryAchieved = true;
+      debugPrint('${winningTeam == Team.blue ? "Blue" : "Red"} team wins!');
+    }
+  }
+  
+  void spawnUnits(int count, Vector2 position, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
     final rng = Random();
     int attempts = 0, spawned = 0;
-    while (spawned < count && attempts < count * 20) {
-      final position = Vector2(
-        rng.nextDouble() * gameSize.x,
-        rng.nextDouble() * gameSize.y,
-      );
-      if (_island.isOnLand(position)) {
-        add(UnitComponent(position: position));
+    
+    // Always spawn exactly 2 units: one captain and one swordsman
+    final int maxUnits = 2;
+    bool hasCaptain = false;
+    
+    // Get coastline for spawning units on the perimeter
+    final coastline = _island.getCoastline();
+    if (coastline.isEmpty) return;
+    
+    // Get apex for movement target
+    final apex = getIslandApex();
+    if (apex == null) return;
+    
+    while (spawned < maxUnits && attempts < maxUnits * 20) {
+      // Spawn on a random point along the coastline
+      final spawnPoint = coastline[rng.nextInt(coastline.length)];
+      final unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+      
+      if (_island.isOnLand(unitPosition)) {
+        // Determine unit type - only captain and swordsman
+        UnitType unitType;
+        if (!hasCaptain) {
+          unitType = UnitType.captain;
+          hasCaptain = true;
+        } else {
+          unitType = UnitType.swordsman;
+        }
+        
+        // Create unit model with initial velocity toward apex
+        Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
+        toApex.normalize();
+        
+        final unitModel = UnitModel(
+          id: 'unit_${DateTime.now().millisecondsSinceEpoch}_$spawned',
+          type: unitType,
+          position: unitPosition,
+          team: team,
+          velocity: toApex.scaled(unitType == UnitType.captain ? 15.0 : 10.0),
+        );
+        
+        // Create unit component
+        final unitComponent = UnitComponent(model: unitModel);
+        add(unitComponent);
+        _units.add(unitComponent);
         spawned++;
       }
       attempts++;
+    }
+    
+    // Check if any team has been eliminated
+    checkVictoryConditions();
+  }
+  
+  // Legacy method for compatibility with existing code
+  void spawnUnitsLegacy(int count) {
+    // Use center of screen as default position
+    spawnUnitsAtPosition(gameSize / 2);
+  }
+  
+  void spawnUnitsAtPosition(Vector2 position) {
+    // Alternate between teams for testing
+    Team team = _units.isEmpty || _units.last.model.team == Team.red ? Team.blue : Team.red;
+    spawnUnits(2, position, team);
+  }
+  
+  @override
+  void onTap() {
+    if (_victoryAchieved) return;
+    
+    final touchPosition = camera.viewfinder.position;
+    
+    // Check if we tapped on a unit
+    bool tappedOnUnit = false;
+    for (final unit in _units) {
+      if (unit.containsPoint(touchPosition)) {
+        selectUnit(touchPosition);
+        tappedOnUnit = true;
+        break;
+      }
+    }
+    
+    // If not tapped on a unit, spawn new units
+    if (!tappedOnUnit) {
+      spawnUnitsAtPosition(touchPosition);
     }
   }
 }

@@ -4,25 +4,7 @@ import 'dart:typed_data';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
-
-/// Grid cell for gameplay/pathfinding/flocking
-class GridCell {
-  final int gridX;
-  final int gridY;
-  final Offset center;
-  final double elevation;
-  final int band; // Elevation band for gameplay
-  final bool isLand;
-
-  GridCell({
-    required this.gridX,
-    required this.gridY,
-    required this.center,
-    required this.elevation,
-    required this.band,
-    required this.isLand,
-  });
-}
+import '../models/island_model.dart';
 
 /// Helper class for shader coordinate extraction (unchanged from your working version)
 class ShaderCoordinateExtractor {
@@ -170,8 +152,12 @@ class ShaderCoordinateExtractor {
   }
 }
 
-/// Main IslandComponent with grid-inside-coastline logic, elevation bands, and apex computation
+/// Main IslandComponent with rendering logic
 class IslandComponent extends PositionComponent {
+  // Island model data
+  IslandGridModel? _model;
+  
+  // Rendering properties
   double amplitude;
   double wavelength;
   double bias;
@@ -179,27 +165,15 @@ class IslandComponent extends PositionComponent {
   Vector2 gameSize;
   double islandRadius;
   double radius;
+  bool showPerimeter = false;
 
+  // Shader properties
   ui.FragmentProgram? fragmentProgram;
   ui.FragmentShader? shader;
   bool shaderLoaded = false;
-
-  late fn.SimplexNoise noise;
-
-  // Contour data (from shader extraction)
-  Map<String, List<Offset>> _shaderContours = {};
-  bool showPerimeter = false;
-  bool _perimeterDirty = true;
-
-  // Grid data (cells only on land)
-  List<GridCell> _islandGrid = [];
-  int gridSteps = 40; // Adjust for granularity
-
-  // Apex (peak) position (computed at elevation band extraction)
-  Offset? apexPosition;
-
-  // Shader coordinate extractor (set after shader load)
   ShaderCoordinateExtractor? _coordinateExtractor;
+  bool _perimeterDirty = true;
+  Map<String, List<Offset>> _shaderContours = {};
 
   IslandComponent({
     required this.amplitude,
@@ -213,7 +187,6 @@ class IslandComponent extends PositionComponent {
     anchor = Anchor.center;
     size = gameSize;
     position = gameSize / 2;
-    noise = fn.SimplexNoise(seed: seed, frequency: 1.0);
   }
 
   @override
@@ -222,7 +195,7 @@ class IslandComponent extends PositionComponent {
     await _loadShader();
     _perimeterDirty = true;
     await _extractShaderContours();
-    _buildIslandGrid();
+    _buildIslandModel();
   }
 
   Future<void> _loadShader() async {
@@ -256,8 +229,23 @@ class IslandComponent extends PositionComponent {
     this.radius = gameSize.x * 0.3 * islandRadius;
     this.size = gameSize;
     this.position = gameSize / 2;
-    noise = fn.SimplexNoise(seed: seed, frequency: 1.0);
     _perimeterDirty = true;
+    _extractShaderContours().then((_) => _buildIslandModel());
+  }
+
+  void _buildIslandModel() {
+    if (_shaderContours.isEmpty) return;
+    
+    _model = IslandGridModel.generate(
+      amplitude: amplitude,
+      wavelength: wavelength,
+      bias: bias,
+      seed: seed,
+      size: Size(size.x, size.y),
+      islandRadius: islandRadius,
+      gridSteps: 40,
+      contours: _shaderContours,
+    );
   }
 
   @override
@@ -270,13 +258,15 @@ class IslandComponent extends PositionComponent {
     if (showPerimeter) {
       _drawGridOnLand(canvas);
       _drawPerimeter(canvas);
-    }
-    // Draw apex (highpoint)
-    if (apexPosition != null) {
-      final paint = Paint()
-        ..color = Colors.red
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(apexPosition!, 8, paint);
+      
+      // Draw apex (highpoint) only when perimeter is shown
+      final apex = _model?.getApex();
+      if (apex != null) {
+        final paint = Paint()
+          ..color = Colors.red
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(apex, 8, paint);
+      }
     }
   }
 
@@ -305,16 +295,14 @@ class IslandComponent extends PositionComponent {
 
   /// Draw grid points only on land (inside coastline)
   void _drawGridOnLand(Canvas canvas) {
-    final List<Offset> coastline = _shaderContours['coastline'] ?? [];
-    if (coastline.isEmpty) return;
-    Path coastPath = Path()..addPolygon(coastline, true);
-
+    if (_model == null) return;
+    
     final Paint gridPaint = Paint()
       ..color = Colors.black.withOpacity(0.19)
       ..strokeWidth = 0.7
       ..style = PaintingStyle.stroke;
 
-    for (final cell in _islandGrid) {
+    for (final cell in _model!.getGridCells()) {
       if (cell.isLand) {
         canvas.drawCircle(cell.center, 2.0, gridPaint);
       }
@@ -347,70 +335,6 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Build grid cells for pathfinding, only inside the coast
-  void _buildIslandGrid() {
-    _islandGrid.clear();
-    final List<Offset> coastline = _shaderContours['coastline'] ?? [];
-    if (coastline.isEmpty) return;
-    Path coastPath = Path()..addPolygon(coastline, true);
-
-    final double step = (radius * 2) / gridSteps;
-    final double left = size.x / 2 - radius;
-    final double top = size.y / 2 - radius;
-
-    double maxElevation = -999.0;
-    Offset? apex;
-    for (int i = 0; i <= gridSteps; i++) {
-      for (int j = 0; j <= gridSteps; j++) {
-        double x = left + i * step;
-        double y = top + j * step;
-        Offset pt = Offset(x, y);
-
-        if (!coastPath.contains(pt)) continue;
-
-        // Convert to centered coordinates for elevation calc
-        double minRes = math.min(size.x, size.y);
-        double cx = (x - size.x / 2) / (0.5 * minRes);
-        double cy = (y - size.y / 2) / (0.5 * minRes);
-        double elevation = getElevationAt(Vector2(cx, cy));
-        int band = getElevationLevel(Vector2(cx, cy));
-
-        // Collect apex (highest point)
-        if (elevation > maxElevation) {
-          maxElevation = elevation;
-          apex = pt;
-        }
-        _islandGrid.add(GridCell(
-          gridX: i,
-          gridY: j,
-          center: pt,
-          elevation: elevation,
-          band: band,
-          isLand: true,
-        ));
-      }
-    }
-    apexPosition = apex;
-  }
-
-  /// Checks if a world position is on land according to the coast contour (shader-based).
-  bool isOnLand(Vector2 worldPosition) {
-    final coastline = _shaderContours['coastline'];
-    if (coastline == null || coastline.isEmpty) return false;
-    final path = Path()..addPolygon(coastline, true);
-    return path.contains(Offset(worldPosition.x, worldPosition.y));
-  }
-
-  /// Returns the movement speed multiplier at a world position based on elevation band.
-  double getMovementSpeedMultiplier(Vector2 worldPosition) {
-    double e = getElevationAt(toCentered(worldPosition));
-    if (e <= 0.32) return 0.0; // water
-    if (e < 0.39) return 0.9; // sand/lowland
-    if (e < 0.54) return 0.8; // lowland
-    if (e < 0.7) return 0.6; // upland
-    return 0.5; // peak
-  }
-
   /// Extracts contours using shader-based detection (async)
   Future<void> _extractShaderContours() async {
     if (_coordinateExtractor == null) return;
@@ -431,50 +355,25 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Dart translation of shader's elevation function (kept for compatibility)
+  // Public API methods that delegate to the model
+  bool isOnLand(Vector2 worldPosition) {
+    if (_model == null) return false;
+    return _model!.isOnLand(Offset(worldPosition.x, worldPosition.y));
+  }
+
+  double getMovementSpeedMultiplier(Vector2 worldPosition) {
+    if (_model == null) return 0.0;
+    return _model!.getMovementSpeedMultiplier(Offset(worldPosition.x, worldPosition.y));
+  }
+
   double getElevationAt(Vector2 centered) {
-    double dist = centered.length;
-    double fbm(Vector2 x) {
-      double v = 0.0;
-      double a = 0.5;
-      Vector2 shift = Vector2(100, 100);
-      double rotSin = math.sin(0.5);
-      double rotCos = math.cos(0.5);
-      for (int i = 0; i < 5; ++i) {
-        v += a * noise.getNoise2(x.x, x.y);
-        double nx = rotCos * x.x + rotSin * x.y;
-        double ny = -rotSin * x.x + rotCos * x.y;
-        x = Vector2(nx, ny) * 2.0 + shift;
-        a *= 0.5;
-      }
-      return v;
-    }
-
-    double addPeak(
-        Vector2 pos, Vector2 center, double radius, double intensity) {
-      double d = (pos - center).length;
-      return intensity * math.exp(-math.pow(d / radius, 2.0));
-    }
-
-    Vector2 noiseCoord =
-        centered / wavelength + Vector2(seed * 0.01, seed * 0.01);
-    double noiseValue = fbm(noiseCoord);
-    noiseValue = (noiseValue + 1.0) * 0.5;
-    noiseValue = noiseValue * amplitude + bias;
-    Vector2 peak1 =
-        Vector2(0.3 * math.sin(seed + 1.3), 0.25 * math.cos(seed + 2.7));
-    Vector2 peak2 =
-        Vector2(-0.26 * math.cos(seed + 3.4), 0.12 * math.sin(seed + 5.8));
-    Vector2 peak3 =
-        Vector2(0.15 * math.sin(seed + 4.1), -0.20 * math.cos(seed + 2.3));
-    noiseValue += addPeak(centered, peak1, 0.13, 0.12);
-    noiseValue += addPeak(centered, peak2, 0.10, 0.08);
-    noiseValue += addPeak(centered, peak3, 0.09, 0.06);
-    noiseValue = noiseValue.clamp(0.0, 1.0);
-    double falloff = 1.0 - (dist / islandRadius);
-    falloff = falloff.clamp(0.0, 1.0);
-    noiseValue *= falloff;
-    return noiseValue;
+    if (_model == null) return 0.0;
+    
+    double minRes = math.min(size.x, size.y);
+    double cx = (centered.x - size.x / 2) / (0.5 * minRes);
+    double cy = (centered.y - size.y / 2) / (0.5 * minRes);
+    
+    return _model!.getElevationAt(Offset(centered.x, centered.y));
   }
 
   Vector2 toCentered(Vector2 worldPosition) {
@@ -484,42 +383,20 @@ class IslandComponent extends PositionComponent {
     return Vector2(cx, cy);
   }
 
-  int getElevationLevel(Vector2 worldPosition) {
-    double e = getElevationAt(worldPosition);
-    if (e <= 0.18) return 0; // Deep water
-    if (e <= 0.32) return 1; // Shallow water
-    if (e < 0.50) return 2; // Low land
-    if (e < 0.70) return 3; // Mid elevation
-    return 4; // High peaks
-  }
-
-  /// Get grid cells (for pathfinding/flocking)
-  List<GridCell> getIslandGrid() => List.unmodifiable(_islandGrid);
-
-  /// Get the apex position (highest elevation on land grid)
-  Offset? getApexPosition() => apexPosition;
-
-  /// Get all contours (shader-detected)
-  Map<String, List<Offset>> getContours() {
-    return Map.from(_shaderContours);
-  }
-
-  /// Get coastline specifically
-  List<Offset> getCoastline() {
-    return _shaderContours['coastline'] ?? [];
-  }
-
-  /// Get high ground perimeter
-  List<Offset> getHighGroundPerimeter() {
-    return _shaderContours['highland'] ?? [];
-  }
-
   /// Force contour re-extraction and grid rebuild
   Future<void> refreshContours() async {
     _perimeterDirty = true;
     await _extractShaderContours();
-    _buildIslandGrid();
+    _buildIslandModel();
   }
+
+  // Getters that delegate to the model
+  List<GridCell> getIslandGrid() => _model?.getGridCells() ?? [];
+  Offset? getApexPosition() => _model?.getApex();
+  Map<String, List<Offset>> getContours() => _model?.getContours() ?? {};
+  List<Offset> getCoastline() => _model?.getContour('coastline') ?? [];
+  List<Offset> getHighGroundPerimeter() => _model?.getContour('highland') ?? [];
+  IslandGridModel? getIslandGridModel() => _model;
 
   @override
   void update(double dt) {}
