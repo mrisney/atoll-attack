@@ -215,18 +215,20 @@ class UnitModel {
     // Calculate new position
     Vector2 newPosition = position + velocity * dt;
     
-    // Check if new position is on land
+    // Check if new position is on land - with fallback to always allow movement
     bool isOnLand = true;
     if (isOnLandCallback != null) {
       isOnLand = isOnLandCallback!(newPosition);
     }
     
+    // Always allow movement but handle water differently
     if (isOnLand) {
       // Safe to move
       position = newPosition;
     } else {
-      // Hit water - bounce back and redirect toward apex
-      velocity = -velocity * 0.5;
+      // Still move but slower and redirect toward apex
+      position = newPosition;
+      velocity = velocity * 0.5;
       
       if (apex != null) {
         Vector2 toApex = Vector2(apex.dx, apex.dy) - position;

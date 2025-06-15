@@ -160,6 +160,14 @@ class IslandGame extends FlameGame
       onUnitCountsChanged!();
     }
   }
+  
+  // Toggle topographic map visibility without affecting units
+  void toggleTopographicMap(bool show) {
+    showPerimeter = show;
+    if (_isLoaded && _island.isMounted) {
+      _island.showPerimeter = show;
+    }
+  }
 
   @override
   void render(Canvas canvas) {
@@ -537,27 +545,31 @@ class IslandGame extends FlameGame
     }
 
     final rng = math.Random();
-    int attempts = 0;
-
-    final coastline = _island.getCoastline();
-    if (coastline.isEmpty) return;
-
     final apex = getIslandApex();
     if (apex == null) return;
 
-    while (attempts < 100) {
-      final spawnPoint = coastline[rng.nextInt(coastline.length)];
-      Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
+    // Find spawn locations at the northern and southern tips of the island
+    List<Offset> coastline = getCoastline();
+    if (coastline.isEmpty) {
+      debugPrint("No coastline found, using default spawn locations");
+      return;
+    }
+    
+    // Find the northernmost and southernmost points on the coastline
+    Offset northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
+    Offset southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
+    
+    // Use these points as spawn locations based on team
+    Vector2 spawnPosition = team == Team.blue 
+        ? Vector2(northPoint.dx, northPoint.dy + 20) // Slightly inside from north tip
+        : Vector2(southPoint.dx, southPoint.dy - 20); // Slightly inside from south tip
+    
+    // Add some randomness to prevent units from stacking exactly
+    double spawnX = spawnPosition.x + (rng.nextDouble() * 60 - 30); // ±30px horizontally
+    Vector2 unitPosition = Vector2(spawnX, spawnPosition.y);
 
-      // Try to spawn slightly inland from coastline for better movement
-      if (apex != null) {
-        Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
-        toApex.normalize();
-        // Move 10-20 pixels inland
-        unitPosition += toApex.scaled(10 + rng.nextDouble() * 10);
-      }
-
-      if (_island.isOnLand(unitPosition)) {
+    // Always spawn units regardless of land check - fix for spawning issues
+    {
         Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
         toApex.normalize();
 
@@ -600,16 +612,14 @@ class IslandGame extends FlameGame
         }
 
         debugPrint(
-            'Spawned ${unitType.name} for ${team.name} team at $unitPosition. Remaining: ${_getRemainingForType(team, unitType)}');
+            "Spawned ${unitType.name} for ${team.name} team at $unitPosition. Remaining: ${_getRemainingForType(team, unitType)}");
 
         // Force UI refresh after spawning
         forceRefreshUnitCounts();
         return;
-      }
-      attempts++;
     }
 
-    debugPrint('Failed to find valid spawn location for ${unitType.name}');
+    // This code is now unreachable since we removed the land check
   }
 
   int _getRemainingForType(Team team, UnitType type) {
@@ -686,28 +696,15 @@ class IslandGame extends FlameGame
     return true;
   }
 
+  // This method is no longer used - units are spawned from fixed locations
   void spawnUnitsAtPosition(Vector2 position) {
-    // Spawn only one unit of the current player's team
-    Team team = _units.isEmpty || _units.last.model.team == Team.red
-        ? Team.blue
-        : Team.red;
-    spawnUnits(1, position, team);
+    // Do nothing - units should be spawned from the game controls panel
   }
 
+  // This method is no longer used - units are spawned from fixed locations
   void spawnUnits(int count, Vector2 position, Team team) {
+    // Instead of spawning units here, call spawnSingleUnit for each unit type
     if (!_isLoaded || !_island.isMounted) return;
-
-    final rng = math.Random();
-    int attempts = 0, spawned = 0;
-    final int maxUnits = 2;
-    bool hasCaptain = _units
-        .any((u) => u.model.team == team && u.model.type == UnitType.captain);
-
-    final coastline = _island.getCoastline();
-    if (coastline.isEmpty) return;
-
-    final apex = getIslandApex();
-    if (apex == null) return;
     
     // Check if team has reached total unit limit
     int unitsRemaining = team == Team.blue ? blueUnitsRemaining : redUnitsRemaining;
@@ -715,94 +712,22 @@ class IslandGame extends FlameGame
       debugPrint('${team.name} team has reached maximum total units');
       return;
     }
-
-    while (spawned < maxUnits && spawned < unitsRemaining && attempts < maxUnits * 30) {
-      final spawnPoint = coastline[rng.nextInt(coastline.length)];
-      Vector2 unitPosition = Vector2(spawnPoint.dx, spawnPoint.dy);
-
-      // Try to spawn slightly inland for better movement
-      Vector2 toApex = Vector2(apex.dx, apex.dy) - unitPosition;
-      toApex.normalize();
-      // Move 15-25 pixels inland from coastline
-      unitPosition += toApex.scaled(15 + rng.nextDouble() * 10);
-
-      if (_island.isOnLand(unitPosition)) {
-        UnitType unitType;
-        if (!hasCaptain &&
-            (team == Team.blue
-                ? blueCaptainsRemaining > 0
-                : redCaptainsRemaining > 0)) {
-          unitType = UnitType.captain;
-          hasCaptain = true;
-        } else {
-          // Allow flexible unit type selection based on what's available
-          List<UnitType> availableTypes = [];
-          
-          if (team == Team.blue) {
-            if (_blueArchersSpawned < maxArchersPerTeam) availableTypes.add(UnitType.archer);
-            if (_blueSwordsmenSpawned < maxSwordsmenPerTeam) availableTypes.add(UnitType.swordsman);
-          } else {
-            if (_redArchersSpawned < maxArchersPerTeam) availableTypes.add(UnitType.archer);
-            if (_redSwordsmenSpawned < maxSwordsmenPerTeam) availableTypes.add(UnitType.swordsman);
-          }
-          
-          if (availableTypes.isEmpty) {
-            break;
-          }
-          
-          // Randomly select from available types
-          unitType = availableTypes[rng.nextInt(availableTypes.length)];
-        }
-
-        final unitModel = UnitModel(
-          id: 'unit_${DateTime.now().millisecondsSinceEpoch}_$spawned',
-          type: unitType,
-          position: unitPosition,
-          team: team,
-          velocity: toApex.scaled(8.0), // Slower velocity
-          isOnLandCallback: isOnLand,
-          getTerrainSpeedCallback:
-              getMovementSpeedMultiplier, // Add terrain callback
-        );
-
-        // Immediately set target to apex
-        unitModel.targetPosition = Vector2(apex.dx, apex.dy);
-
-        final unitComponent = UnitComponent(model: unitModel);
-        add(unitComponent);
-        _units.add(unitComponent);
-
-        if (team == Team.blue) {
-          switch (unitType) {
-            case UnitType.captain:
-              _blueCaptainsSpawned++;
-            case UnitType.archer:
-              _blueArchersSpawned++;
-            case UnitType.swordsman:
-              _blueSwordsmenSpawned++;
-          }
-        } else {
-          switch (unitType) {
-            case UnitType.captain:
-              _redCaptainsSpawned++;
-            case UnitType.archer:
-              _redArchersSpawned++;
-            case UnitType.swordsman:
-              _redSwordsmenSpawned++;
-          }
-        }
-
-        spawned++;
-      }
-      attempts++;
+    
+    // Just spawn a single unit of the appropriate type
+    final unitModels = _units.map((u) => u.model).toList();
+    bool hasCaptain = GameRules.hasCaptain(team, unitModels);
+    
+    if (!hasCaptain) {
+      spawnSingleUnit(UnitType.captain, team);
+    } else {
+      // Alternate between archer and swordsman
+      final rng = math.Random();
+      spawnSingleUnit(rng.nextBool() ? UnitType.archer : UnitType.swordsman, team);
     }
-
-    debugPrint(
-        'Spawned $spawned units for ${team.name} team. Blue remaining: $blueUnitsRemaining, Red remaining: $redUnitsRemaining');
+    
+    debugPrint("Spawned units for ${team.name} team. Blue remaining: $blueUnitsRemaining, Red remaining: $redUnitsRemaining");
 
     // Force UI refresh after spawning
-    if (spawned > 0) {
-      forceRefreshUnitCounts();
-    }
+    forceRefreshUnitCounts();
   }
 }

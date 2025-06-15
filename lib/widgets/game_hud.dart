@@ -81,13 +81,13 @@ class GameHUD extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                Icons.grid_on,
+                                Icons.terrain,
                                 color: Colors.white.withOpacity(0.7),
                                 size: 14,
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Grid',
+                                'Topographic',
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.7),
                                   fontSize: 11,

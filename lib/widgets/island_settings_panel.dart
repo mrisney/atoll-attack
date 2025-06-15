@@ -13,52 +13,53 @@ class IslandSettingsPanel extends ConsumerWidget {
     final notifier = ref.read(islandSettingsProvider.notifier);
 
     return Card(
-      color: Colors.black.withOpacity(0.96),
+      color: Colors.black.withOpacity(0.85),
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70),
-                onPressed: onClose,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  onPressed: onClose,
+                ),
               ),
-            ),
-            _buildSlider(
-              context,
-              'Amplitude',
-              settings.amplitude,
-              1.0,
-              2.0,
-              notifier.setAmplitude,
-            ),
-            _buildSlider(
-              context,
-              'Wavelength',
-              settings.wavelength,
-              0.15,
-              0.7,
-              notifier.setWavelength,
-            ),
-            _buildSlider(
-              context,
-              'Bias',
-              settings.bias,
-              -1.0,
-              0.2,
-              notifier.setBias,
-            ),
-            _buildSlider(
-              context,
-              'Island Size',
-              settings.islandRadius,
-              0.4,
-              1.2,
-              notifier.setIslandRadius,
-            ),
+              _buildSlider(
+                context,
+                'Amplitude',
+                settings.amplitude,
+                1.0,
+                2.0,
+                notifier.setAmplitude,
+              ),
+              _buildSlider(
+                context,
+                'Wavelength',
+                settings.wavelength,
+                0.15,
+                0.7,
+                notifier.setWavelength,
+              ),
+              _buildSlider(
+                context,
+                'Bias',
+                settings.bias,
+                -1.0,
+                0.2,
+                notifier.setBias,
+              ),
+              _buildSlider(
+                context,
+                'Island Size',
+                settings.islandRadius,
+                0.4,
+                2.0,
+                notifier.setIslandRadius,
+              ),
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -89,7 +90,7 @@ class IslandSettingsPanel extends ConsumerWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildSlider(
