@@ -6,6 +6,7 @@ import '../providers/show_perimeter_provider.dart';
 import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
 import '../widgets/game_hud.dart';
+import '../widgets/selected_units_panel.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({Key? key}) : super(key: key);
@@ -18,6 +19,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool showSettings = false;
   bool showControls = false;
   bool showHUD = true;
+  bool showSelectedUnitsPanel = true;
 
   // Define a custom gold color since Colors.gold doesn't exist
   static const Color goldColor = Color(0xFFFFD700);
@@ -193,20 +195,57 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     // Check if gameStats is AsyncValue or Map
     if (gameStats is AsyncValue) {
       return gameStats.when(
-        data: (stats) => GameHUD(
-          blueUnits: stats['blueUnits'] ?? 0,
-          redUnits: stats['redUnits'] ?? 0,
-          blueHealthPercent: stats['blueHealth'] ?? 0.0,
-          redHealthPercent: stats['redHealth'] ?? 0.0,
-          isVisible: showHUD,
-          onToggleVisibility: () => setState(() => showHUD = !showHUD),
-          selectedUnit: game.selectedUnit?.model,
-          blueUnitsRemaining: stats['blueRemaining'] ?? 0,
-          redUnitsRemaining: stats['redRemaining'] ?? 0,
-          showPerimeter: showPerimeter,
-          onPerimeterToggle: (value) {
-            ref.read(showPerimeterProvider.notifier).state = value;
-          },
+        data: (stats) => Column(
+          children: [
+            GameHUD(
+              blueUnits: stats['blueUnits'] ?? 0,
+              redUnits: stats['redUnits'] ?? 0,
+              blueHealthPercent: stats['blueHealth'] ?? 0.0,
+              redHealthPercent: stats['redHealth'] ?? 0.0,
+              isVisible: showHUD,
+              onToggleVisibility: () => setState(() => showHUD = !showHUD),
+              selectedUnit: null, // We're not using this anymore
+              blueUnitsRemaining: stats['blueRemaining'] ?? 0,
+              redUnitsRemaining: stats['redRemaining'] ?? 0,
+              showPerimeter: showPerimeter,
+              onPerimeterToggle: (value) {
+                ref.read(showPerimeterProvider.notifier).state = value;
+              },
+            ),
+            const SizedBox(height: 8),
+            // Add the selected units panel with toggle button
+            if (game.selectedUnits.isNotEmpty)
+              Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Selected Units (${game.selectedUnits.length})',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 12,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          showSelectedUnitsPanel ? Icons.visibility_off : Icons.visibility,
+                          color: Colors.white70,
+                          size: 16,
+                        ),
+                        onPressed: () => setState(() => showSelectedUnitsPanel = !showSelectedUnitsPanel),
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                  if (showSelectedUnitsPanel)
+                    SelectedUnitsPanel(
+                      unitsInfo: game.getSelectedUnitsInfo(),
+                    ),
+                ],
+              ),
+          ],
         ),
         loading: () => const SizedBox.shrink(),
         error: (_, __) => const SizedBox.shrink(),
@@ -214,20 +253,57 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     } else {
       // Handle as Map<String, dynamic>
       final stats = gameStats as Map<String, dynamic>;
-      return GameHUD(
-        blueUnits: stats['blueUnits'] ?? 0,
-        redUnits: stats['redUnits'] ?? 0,
-        blueHealthPercent: stats['blueHealth'] ?? 0.0,
-        redHealthPercent: stats['redHealth'] ?? 0.0,
-        isVisible: showHUD,
-        onToggleVisibility: () => setState(() => showHUD = !showHUD),
-        selectedUnit: game.selectedUnit?.model,
-        blueUnitsRemaining: stats['blueRemaining'] ?? 0,
-        redUnitsRemaining: stats['redRemaining'] ?? 0,
-        showPerimeter: showPerimeter,
-        onPerimeterToggle: (value) {
-          ref.read(showPerimeterProvider.notifier).state = value;
-        },
+      return Column(
+        children: [
+          GameHUD(
+            blueUnits: stats['blueUnits'] ?? 0,
+            redUnits: stats['redUnits'] ?? 0,
+            blueHealthPercent: stats['blueHealth'] ?? 0.0,
+            redHealthPercent: stats['redHealth'] ?? 0.0,
+            isVisible: showHUD,
+            onToggleVisibility: () => setState(() => showHUD = !showHUD),
+            selectedUnit: null, // We're not using this anymore
+            blueUnitsRemaining: stats['blueRemaining'] ?? 0,
+            redUnitsRemaining: stats['redRemaining'] ?? 0,
+            showPerimeter: showPerimeter,
+            onPerimeterToggle: (value) {
+              ref.read(showPerimeterProvider.notifier).state = value;
+            },
+          ),
+          const SizedBox(height: 8),
+          // Add the selected units panel with toggle button
+          if (game.selectedUnits.isNotEmpty)
+            Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Selected Units (${game.selectedUnits.length})',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 12,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        showSelectedUnitsPanel ? Icons.visibility_off : Icons.visibility,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
+                      onPressed: () => setState(() => showSelectedUnitsPanel = !showSelectedUnitsPanel),
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+                if (showSelectedUnitsPanel)
+                  SelectedUnitsPanel(
+                    unitsInfo: game.getSelectedUnitsInfo(),
+                  ),
+              ],
+            ),
+        ],
       );
     }
   }

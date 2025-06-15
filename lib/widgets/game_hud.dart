@@ -152,17 +152,7 @@ class GameHUD extends StatelessWidget {
           ),
         ),
 
-        // Selected unit info card
-        if (selectedUnit != null) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: Colors.black.withOpacity(0.4), // More transparent
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: _buildSelectedUnitInfo(selectedUnit!),
-            ),
-          ),
-        ],
+        // We'll use the SelectedUnitsPanel widget instead of this
       ],
     );
   }

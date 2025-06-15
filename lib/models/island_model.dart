@@ -172,26 +172,20 @@ class IslandGridModel {
     noiseValue = (noiseValue + 1.0) * 0.5;
     noiseValue = noiseValue * amplitude + bias;
     
-    // Generate random peak positions based on seed
-    // This ensures the apex can be in different locations
+    // Always place a prominent peak in the highland area
+    // This ensures the apex is always on the rocky part of the island
+    Vector2 highlandPeak = Vector2(0.0, 0.0); // Center of the island
+    noiseValue += addPeak(centered, highlandPeak, 0.2, 0.3); // Strong central peak
+    
+    // Add some smaller random peaks for variety
     final rng = math.Random(seed);
     Vector2 peak1 = Vector2(
-      (rng.nextDouble() * 0.6 - 0.3), // -0.3 to 0.3
-      (rng.nextDouble() * 0.6 - 0.3)  // -0.3 to 0.3
-    );
-    Vector2 peak2 = Vector2(
-      (rng.nextDouble() * 0.6 - 0.3), 
-      (rng.nextDouble() * 0.6 - 0.3)
-    );
-    Vector2 peak3 = Vector2(
-      (rng.nextDouble() * 0.6 - 0.3), 
-      (rng.nextDouble() * 0.6 - 0.3)
+      (rng.nextDouble() * 0.4 - 0.2), // -0.2 to 0.2
+      (rng.nextDouble() * 0.4 - 0.2)  // -0.2 to 0.2
     );
     
-    // Add peaks with varying intensities
-    noiseValue += addPeak(centered, peak1, 0.13, 0.15);
-    noiseValue += addPeak(centered, peak2, 0.10, 0.10);
-    noiseValue += addPeak(centered, peak3, 0.09, 0.08);
+    // Add smaller peaks with lower intensities
+    noiseValue += addPeak(centered, peak1, 0.1, 0.08);
     
     noiseValue = noiseValue.clamp(0.0, 1.0);
     double falloff = 1.0 - (dist / islandRadius);

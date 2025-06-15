@@ -50,8 +50,9 @@ class IslandGame extends FlameGame
   int _blueUnitsRemaining = kTotalUnitsPerTeam;
   int _redUnitsRemaining = kTotalUnitsPerTeam;
 
-  // Callback to notify providers when unit counts change
+  // Callbacks to notify providers when unit counts change or unit info should be shown
   void Function()? onUnitCountsChanged;
+  void Function(String info)? onShowUnitInfo;
 
   // Selection box properties
   Vector2? _selectionStart;
@@ -64,6 +65,12 @@ class IslandGame extends FlameGame
     ..color = Colors.white
     ..style = PaintingStyle.stroke
     ..strokeWidth = 2.0;
+    
+  // Destination marker properties
+  Vector2? _destinationMarker;
+  double _markerOpacity = 0.7;
+  double _markerPulseScale = 1.0;
+  double _markerTimer = 0.0;
 
   IslandGame({
     required this.amplitude,
@@ -154,6 +161,9 @@ class IslandGame extends FlameGame
     }
 
     processGameRules();
+    
+    // Update destination marker
+    _updateDestinationMarker(dt);
 
     // Force UI updates every frame to ensure HUD reactivity
     if (onUnitCountsChanged != null) {
@@ -161,8 +171,37 @@ class IslandGame extends FlameGame
     }
   }
   
+  void _updateDestinationMarker(double dt) {
+    if (_destinationMarker != null) {
+      _markerTimer += dt;
+      
+      // Pulse effect - more pronounced
+      _markerPulseScale = 1.0 + 0.5 * math.sin(_markerTimer * 4);
+      
+      // Fade out over time, but more slowly
+      _markerOpacity -= dt * 0.05;
+      
+      // Check if any units are still moving to this destination
+      bool unitsStillMoving = false;
+      for (final unit in _units) {
+        if (unit.model.targetPosition != null) {
+          final distance = (_destinationMarker! - unit.model.targetPosition!).length;
+          if (distance < 20) { // Increased threshold
+            unitsStillMoving = true;
+            break;
+          }
+        }
+      }
+      
+      // Remove marker if it's faded out or no units are moving to it
+      if (_markerOpacity <= 0 || !unitsStillMoving) {
+        _destinationMarker = null;
+      }
+    }
+  }
+  
   // Toggle topographic map visibility without affecting units
-  void toggleTopographicMap(bool show) {
+  void toggleApexMarker(bool show) {
     showPerimeter = show;
     if (_isLoaded && _island.isMounted) {
       _island.showPerimeter = show;
@@ -182,6 +221,51 @@ class IslandGame extends FlameGame
 
       canvas.drawRect(rect, _selectionPaint);
       canvas.drawRect(rect, _selectionBorderPaint);
+    }
+    
+    // Draw destination marker
+    if (_destinationMarker != null) {
+      final markerPaint = Paint()
+        ..color = Colors.white.withOpacity(_markerOpacity)
+        ..style = PaintingStyle.fill;
+      
+      final markerBorderPaint = Paint()
+        ..color = Colors.white.withOpacity(_markerOpacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      
+      // Draw pulsing circle
+      canvas.drawCircle(
+        Offset(_destinationMarker!.x, _destinationMarker!.y),
+        10 * _markerPulseScale, // Larger radius
+        markerPaint
+      );
+      
+      canvas.drawCircle(
+        Offset(_destinationMarker!.x, _destinationMarker!.y),
+        10 * _markerPulseScale, // Larger radius
+        markerBorderPaint
+      );
+      
+      // Draw crosshair lines for better visibility
+      final crosshairPaint = Paint()
+        ..color = Colors.white.withOpacity(_markerOpacity * 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      
+      // Horizontal line
+      canvas.drawLine(
+        Offset(_destinationMarker!.x - 15, _destinationMarker!.y),
+        Offset(_destinationMarker!.x + 15, _destinationMarker!.y),
+        crosshairPaint
+      );
+      
+      // Vertical line
+      canvas.drawLine(
+        Offset(_destinationMarker!.x, _destinationMarker!.y - 15),
+        Offset(_destinationMarker!.x, _destinationMarker!.y + 15),
+        crosshairPaint
+      );
     }
   }
 
@@ -283,16 +367,33 @@ class IslandGame extends FlameGame
       playerTeam = _units.last.model.team;
     }
 
+    // Make selection box more generous on mobile devices
+    final selectionBuffer = 10.0; // Extra pixels to make selection easier
+
     for (final unit in _units) {
       // Only select units of the player's team
       if (unit.model.health > 0 &&
           (playerTeam == null || unit.model.team == playerTeam) &&
-          unit.position.x >= minX &&
-          unit.position.x <= maxX &&
-          unit.position.y >= minY &&
-          unit.position.y <= maxY) {
+          unit.position.x >= minX - selectionBuffer &&
+          unit.position.x <= maxX + selectionBuffer &&
+          unit.position.y >= minY - selectionBuffer &&
+          unit.position.y <= maxY + selectionBuffer) {
         unit.setSelected(true);
         _selectedUnits.add(unit);
+      }
+    }
+
+    // If we selected units, show a visual feedback and trigger UI update
+    if (_selectedUnits.isNotEmpty) {
+      // Flash the selection box briefly
+      _selectionPaint.color = Colors.white.withOpacity(0.5);
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _selectionPaint.color = Colors.white.withOpacity(0.3);
+      });
+      
+      // Trigger UI update to show selected units info
+      if (onUnitCountsChanged != null) {
+        onUnitCountsChanged!();
       }
     }
 
@@ -301,16 +402,18 @@ class IslandGame extends FlameGame
 
   void _moveSelectedUnits(Vector2 target) {
     if (_selectedUnits.isEmpty) return;
+    
+    // Always create a destination marker regardless of land check
+    _createDestinationMarker(target);
 
     for (final unit in _selectedUnits) {
-      if (isOnLand(target)) {
-        // Use the setTargetPosition method to properly handle redirection
-        unit.setTargetPosition(target);
-        // Deselect the unit after setting its target
-        unit.setSelected(false);
-        debugPrint(
-            'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
-      }
+      // Always allow movement regardless of land check
+      // Use the setTargetPosition method to properly handle redirection
+      unit.setTargetPosition(target);
+      // Deselect the unit after setting its target
+      unit.setSelected(false);
+      debugPrint(
+          'Moving ${unit.model.type.name} to $target (distance: ${unit.model.position.distanceTo(target).toStringAsFixed(1)})');
     }
   }
 
@@ -559,10 +662,10 @@ class IslandGame extends FlameGame
     Offset northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
     Offset southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
     
-    // Use these points as spawn locations based on team
+    // Use these points as spawn locations based on team, but ensure they're well inside the island
     Vector2 spawnPosition = team == Team.blue 
-        ? Vector2(northPoint.dx, northPoint.dy + 20) // Slightly inside from north tip
-        : Vector2(southPoint.dx, southPoint.dy - 20); // Slightly inside from south tip
+        ? Vector2(gameSize.x / 2, northPoint.dy + 50) // Blue team at north, well inside island
+        : Vector2(gameSize.x / 2, southPoint.dy - 50); // Red team at south, well inside island
     
     // Add some randomness to prevent units from stacking exactly
     double spawnX = spawnPosition.x + (rng.nextDouble() * 60 - 30); // ±30px horizontally
@@ -684,16 +787,101 @@ class IslandGame extends FlameGame
     _selectionEnd = null;
   }
 
+  // Store last tap position for unit info
+  Vector2 _lastTapPosition = Vector2.zero();
+  
   @override
   bool onTapDown(TapDownInfo info) {
+    _lastTapPosition = info.eventPosition.global;
+    
+    // Check if we tapped on a unit first
+    final tappedUnit = _findUnitAtPosition(_lastTapPosition);
+    if (tappedUnit != null) {
+      // Show unit information
+      tappedUnit.showUnitInfo();
+      // Select the unit if it's not already selected
+      if (!tappedUnit.model.isSelected) {
+        _clearSelection();
+        tappedUnit.setSelected(true);
+        _selectedUnits.add(tappedUnit);
+      }
+      return true;
+    }
+    
     // If units are selected, move them to the tapped position
     if (_selectedUnits.isNotEmpty) {
-      _moveSelectedUnits(info.eventPosition.global);
-      // Clear selection after moving units
-      _clearSelection();
+      _moveSelectedUnits(_lastTapPosition);
+      // Don't clear selection immediately to allow the destination marker to show
+      // The selection will be cleared after the unit starts moving
     }
-    // Removed automatic unit spawning on tap
     return true;
+  }
+  
+  // Find a unit at the given position
+  UnitComponent? _findUnitAtPosition(Vector2 position) {
+    if (position == Vector2.zero()) return null;
+    
+    for (final unit in _units) {
+      if (unit.containsPoint(position)) {
+        return unit;
+      }
+    }
+    return null;
+  }
+  
+  // Create a destination marker at the given position
+  void _createDestinationMarker(Vector2 position) {
+    _destinationMarker = position.clone();
+    _markerOpacity = 0.9; // Increased opacity for better visibility
+    _markerPulseScale = 1.0;
+    _markerTimer = 0.0;
+    
+    // Make the marker stay visible longer
+    Future.delayed(const Duration(seconds: 3), () {
+      if (_markerOpacity > 0.3) {
+        _markerOpacity = 0.3; // Start fading out after 3 seconds
+      }
+    });
+  }
+  
+  // Selected units info for UI display
+  List<Map<String, dynamic>> getSelectedUnitsInfo() {
+    List<Map<String, dynamic>> unitsInfo = [];
+    
+    // If no units are selected, check if we have a tapped unit
+    final unitsList = _selectedUnits.isEmpty ? 
+        (_findUnitAtPosition(_lastTapPosition) != null ? 
+        [_findUnitAtPosition(_lastTapPosition)!] : []) : 
+        _selectedUnits;
+    
+    for (final unit in unitsList) {
+      final healthPercent = (unit.model.health / unit.model.maxHealth * 100).toInt();
+      final typeStr = unit.model.type.toString().split('.').last;
+      final teamStr = unit.model.team.toString().split('.').last;
+      
+      unitsInfo.add({
+        'type': typeStr.toUpperCase(),
+        'team': teamStr.toUpperCase(),
+        'health': healthPercent,
+        'hasFlag': unit.model.type == UnitType.captain && unit.model.hasPlantedFlag,
+        'id': unit.model.id, // Add unique ID for scrolling panel
+      });
+    }
+    
+    return unitsInfo;
+  }
+  
+  // Show unit information in the UI
+  void showUnitInfo(String info) {
+    debugPrint("Unit Info: $info");
+    // Pass the info to the UI callback if available
+    if (onShowUnitInfo != null) {
+      onShowUnitInfo!(info);
+    }
+    // Trigger UI update to show selected units info
+    if (onUnitCountsChanged != null) {
+      onUnitCountsChanged!();
+    }
   }
 
   // This method is no longer used - units are spawned from fixed locations

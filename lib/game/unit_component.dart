@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../models/unit_model.dart';
 import 'island_game.dart';
+import 'arrow_component.dart';
 
 class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   final UnitModel model;
@@ -104,16 +105,17 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
   @override
   void render(Canvas canvas) {
-    // Apply death animation transformations
-    if (_isPlayingDeathAnimation) {
-      canvas.save();
-      canvas.scale(_deathScale);
-      canvas.rotate(_deathRotation);
+    try {
+      // Apply death animation transformations
+      if (_isPlayingDeathAnimation) {
+        canvas.save();
+        canvas.scale(_deathScale);
+        canvas.rotate(_deathRotation);
 
-      // Apply opacity by modifying paint colors
-      _fillPaint.color = model.color.withOpacity(_deathOpacity);
-      _borderPaint.color = Colors.black.withOpacity(0.2 * _deathOpacity);
-    }
+        // Apply opacity by modifying paint colors
+        _fillPaint.color = model.color.withOpacity(_deathOpacity);
+        _borderPaint.color = Colors.black.withOpacity(0.2 * _deathOpacity);
+      }
 
     // Apply victory animation transformations
     if (_isVictoryAnimation) {
@@ -141,6 +143,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     // Restore canvas if transformations were applied
     if (_isPlayingDeathAnimation || _isVictoryAnimation) {
       canvas.restore();
+    }
+    } catch (e) {
+      // Silently handle any rendering errors
     }
   }
 
@@ -290,20 +295,50 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     );
   }
 
+  // Track time since last arrow
+  double _timeSinceLastArrow = 0.0;
+  static const double _arrowCooldown = 0.8; // seconds between arrows
+  
   void _renderAttackIndicator(Canvas canvas) {
     if (model.type == UnitType.archer) {
-      // Draw arrow
-      final direction = model.velocity.normalized();
-      final start = Vector2(size.x / 2, size.y / 2);
-      final end = start + direction * model.radius * 2;
-
-      canvas.drawLine(
-        Offset(start.x, start.y),
-        Offset(end.x, end.y),
-        Paint()
-          ..color = Colors.yellow.withOpacity(_deathOpacity)
-          ..strokeWidth = 1,
-      );
+      try {
+        // Get elevation for range calculation
+        double elevation = gameRef.getElevationAt(model.position);
+        // Calculate effective range based on elevation
+        double effectiveRange = elevation > 0.6 ? 100.0 : model.attackRange;
+        
+        // Find nearest enemy to shoot arrows at
+        final units = gameRef.getAllUnits();
+        UnitComponent? nearestEnemy;
+        double nearestDistance = effectiveRange;
+        
+        for (final unit in units) {
+          if (unit.model.team != model.team && unit.model.health > 0) {
+            final distance = model.position.distanceTo(unit.model.position);
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestEnemy = unit;
+            }
+          }
+        }
+        
+        if (nearestEnemy != null) {
+          // Draw simple indicator for immediate feedback
+          final direction = (nearestEnemy.position - position).normalized();
+          final start = Vector2(size.x / 2, size.y / 2);
+          
+          // Draw targeting line
+          canvas.drawLine(
+            Offset(start.x, start.y),
+            Offset(start.x + direction.x * 20, start.y + direction.y * 20),
+            Paint()
+              ..color = Colors.white.withOpacity(0.5)
+              ..strokeWidth = 1.0,
+          );
+        }
+      } catch (e) {
+        // Silently handle any errors in arrow rendering
+      }
     } else if (model.type == UnitType.swordsman) {
       // Draw sword slash
       canvas.drawArc(
@@ -403,6 +438,59 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       }
       return; // Don't update model during death animation
     }
+    
+    // Check if archer should be in attack state based on nearby enemies
+    if (model.type == UnitType.archer) {
+      try {
+        final units = gameRef.getAllUnits();
+        // Get elevation for range calculation (with safety check)
+        double elevation = 0.0;
+        try {
+          elevation = gameRef.getElevationAt(model.position);
+        } catch (e) {
+          // Use default elevation if error occurs
+        }
+        
+        // Calculate effective range based on elevation
+        double effectiveRange = elevation > 0.6 ? 100.0 : model.attackRange;
+        
+        // Find nearest enemy in range
+        UnitComponent? nearestEnemy;
+        double nearestDistance = effectiveRange;
+        
+        for (final unit in units) {
+          if (unit.model.team != model.team && unit.model.health > 0) {
+            final distance = model.position.distanceTo(unit.model.position);
+            if (distance <= effectiveRange && distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestEnemy = unit;
+              model.state = UnitState.attacking;
+            }
+          }
+        }
+        
+        // Spawn arrow if in attack state and cooldown elapsed
+        if (model.state == UnitState.attacking && nearestEnemy != null) {
+          _timeSinceLastArrow += 1/60; // Approximate for dt
+          if (_timeSinceLastArrow >= _arrowCooldown) {
+            _timeSinceLastArrow = 0;
+            
+            // Create and add arrow component
+            final arrow = ArrowComponent(
+              startPosition: position.clone(),
+              targetPosition: nearestEnemy.position.clone(),
+              team: model.team,
+            );
+            
+            gameRef.add(arrow);
+          }
+        } else {
+          _timeSinceLastArrow = _arrowCooldown; // Ready to fire immediately when enemy appears
+        }
+      } catch (e) {
+        // Silently handle any errors in attack state detection
+      }
+    }
 
     // Update victory animation
     if (_isVictoryAnimation) {
@@ -488,10 +576,32 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     
     // Don't use pathfinding - let units move irregularly
     model.path = null;
+    
+    // Deselect the unit after a short delay to allow destination marker to show
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (model.isSelected) {
+        model.isSelected = false;
+      }
+    });
   }
 
   bool containsPoint(Vector2 point) {
     final center = position + size / 2;
     return center.distanceTo(point) <= model.radius;
+  }
+  
+  // Show unit information when tapped
+  void showUnitInfo() {
+    final healthPercent = (model.health / model.maxHealth * 100).toInt();
+    final typeStr = model.type.toString().split('.').last;
+    final teamStr = model.team.toString().split('.').last;
+    
+    // Display unit information using game's notification system
+    gameRef.showUnitInfo(
+      "Unit: ${typeStr.toUpperCase()}\n"
+      "Team: ${teamStr.toUpperCase()}\n"
+      "Health: $healthPercent%\n"
+      "${model.type == UnitType.captain && model.hasPlantedFlag ? 'FLAG PLANTED!' : ''}"
+    );
   }
 }

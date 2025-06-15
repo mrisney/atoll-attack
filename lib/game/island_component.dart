@@ -263,11 +263,8 @@ class IslandComponent extends PositionComponent {
       _renderFallback(canvas);
     }
     
-    // Only draw topographic map and apex if showPerimeter is true
+    // Only draw apex if showPerimeter is true
     if (showPerimeter) {
-      // Draw contours (topographic map)
-      _drawPerimeter(canvas);
-      
       // Draw apex (highpoint)
       final apex = _model?.getApex();
       if (apex != null) {
@@ -357,6 +354,10 @@ class IslandComponent extends PositionComponent {
 
   /// Draw contours (coastline, elevation bands) as a topographic map
   void _drawPerimeter(Canvas canvas) {
+    // Device-specific scaling factor to ensure contours render correctly on all devices
+    final devicePixelRatio = ui.window.devicePixelRatio;
+    final scaleFactor = devicePixelRatio > 2.5 ? 1.0 / devicePixelRatio : 1.0;
+    
     final contourColors = {
       'coastline': Colors.blue.shade800,
       'shallow': Colors.green.shade300,
@@ -378,6 +379,15 @@ class IslandComponent extends PositionComponent {
       final points = _shaderContours[key];
       if (points == null || points.length < 3) continue;
       
+      // Apply scaling to points if needed for high-DPI devices
+      List<Offset> scaledPoints = points;
+      if (scaleFactor != 1.0) {
+        scaledPoints = points.map((p) => Offset(
+          p.dx * scaleFactor, 
+          p.dy * scaleFactor
+        )).toList();
+      }
+      
       // Fill contours with semi-transparent color
       final fillPaint = Paint()
         ..color = contourColors[key]!.withOpacity(0.2)
@@ -389,10 +399,10 @@ class IslandComponent extends PositionComponent {
         ..style = PaintingStyle.stroke;
       
       final path = Path();
-      if (points.isNotEmpty) {
-        path.moveTo(points[0].dx, points[0].dy);
-        for (int i = 1; i < points.length; i++) {
-          path.lineTo(points[i].dx, points[i].dy);
+      if (scaledPoints.isNotEmpty) {
+        path.moveTo(scaledPoints[0].dx, scaledPoints[0].dy);
+        for (int i = 1; i < scaledPoints.length; i++) {
+          path.lineTo(scaledPoints[i].dx, scaledPoints[i].dy);
         }
         path.close();
       }
@@ -412,12 +422,12 @@ class IslandComponent extends PositionComponent {
         
         // Add a few elevation markers along the contour
         final numLabels = key == 'highland' ? 1 : 2;
-        final step = points.length ~/ (numLabels + 1);
+        final step = scaledPoints.length ~/ (numLabels + 1);
         
         for (int i = 1; i <= numLabels; i++) {
           final index = i * step;
-          if (index < points.length) {
-            final position = points[index];
+          if (index < scaledPoints.length) {
+            final position = scaledPoints[index];
             final textSpan = TextSpan(text: '$elevation m', style: textStyle);
             final textPainter = TextPainter(
               text: textSpan,

@@ -78,7 +78,7 @@ class UnitModel {
     this.getTerrainSpeedCallback,
   }) : 
     // Set type-specific properties
-    attackRange = type == UnitType.archer ? 100.0 : (type == UnitType.swordsman ? 15.0 : 0.0),
+    attackRange = type == UnitType.archer ? 50.0 : (type == UnitType.swordsman ? 15.0 : 0.0),
     attackPower = type == UnitType.archer ? 8.0 : (type == UnitType.swordsman ? 12.0 : 0.0),
     defense = type == UnitType.swordsman ? 10.0 : 3.0,
     health = type == UnitType.swordsman ? 100.0 : (type == UnitType.captain ? 60.0 : 80.0),
@@ -122,12 +122,21 @@ class UnitModel {
     // Skip update if dead
     if (health <= 0) return;
     
+    // Adjust archer range based on elevation
+    double effectiveAttackRange = attackRange;
+    if (type == UnitType.archer) {
+      // If archer is at high elevation (> 0.6), increase range to 100m
+      if (elevationAtPosition != null && elevationAtPosition > 0.6) {
+        effectiveAttackRange = 100.0;
+      }
+    }
+    
     // Combat logic - check for enemies in range, but only if not being redirected by player
     if (!forceRedirect) {
       final enemies = units.where((u) => u.team != team && u.health > 0).toList();
       for (final enemy in enemies) {
         double distance = position.distanceTo(enemy.position);
-        if (distance <= attackRange && attackPower > 0) {
+        if (distance <= effectiveAttackRange && attackPower > 0) {
           // Attack enemy
           state = UnitState.attacking;
           enemy.health -= attackPower * dt * 0.5;
