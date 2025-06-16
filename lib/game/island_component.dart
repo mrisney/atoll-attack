@@ -163,7 +163,7 @@ class ShaderCoordinateExtractor {
 class IslandComponent extends PositionComponent {
   // Island model data
   IslandGridModel? _model;
-
+  
   // Rendering properties
   double amplitude;
   double wavelength;
@@ -242,7 +242,7 @@ class IslandComponent extends PositionComponent {
 
   void _buildIslandModel() {
     if (_shaderContours.isEmpty) return;
-
+    
     _model = IslandGridModel.generate(
       amplitude: amplitude,
       wavelength: wavelength,
@@ -263,52 +263,55 @@ class IslandComponent extends PositionComponent {
       _renderFallback(canvas);
     }
     
-    // Only draw apex if showPerimeter is true
+    // Draw perimeter and grid only if showPerimeter is true
     if (showPerimeter) {
-      // Draw apex (highpoint)
-      final apex = _model?.getApex();
-      if (apex != null) {
-        // Draw apex with a more visible marker
-        final outerPaint = Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2;
-          
-        final innerPaint = Paint()
-          ..color = Colors.red
-          ..style = PaintingStyle.fill;
-          
-        canvas.drawCircle(apex, 8, innerPaint);
-        canvas.drawCircle(apex, 8, outerPaint);
+      _drawPerimeter(canvas);
+      _drawGridOnLand(canvas);
+    }
+    
+    // Always draw apex (highpoint) regardless of showPerimeter setting
+    final apex = _model?.getApex();
+    if (apex != null) {
+      // Draw apex with a more visible marker
+      final outerPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
         
-        // Add "APEX" label
-        final textStyle = TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              offset: Offset(1, 1),
-              blurRadius: 3,
-              color: Colors.black,
-            ),
-          ],
-        );
+      final innerPaint = Paint()
+        ..color = Colors.red
+        ..style = PaintingStyle.fill;
         
-        final textSpan = TextSpan(text: "APEX", style: textStyle);
-        final textPainter = TextPainter(
-          text: textSpan,
-          textDirection: TextDirection.ltr,
-        );
-        textPainter.layout();
-        textPainter.paint(
-          canvas, 
-          Offset(
-            apex.dx - textPainter.width / 2,
-            apex.dy - 25,
+      canvas.drawCircle(apex, 8, innerPaint);
+      canvas.drawCircle(apex, 8, outerPaint);
+      
+      // Add "APEX" label
+      final textStyle = TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
+            offset: Offset(1, 1),
+            blurRadius: 3,
+            color: Colors.black,
           ),
-        );
-      }
+        ],
+      );
+      
+      final textSpan = TextSpan(text: "APEX", style: textStyle);
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas, 
+        Offset(
+          apex.dx - textPainter.width / 2,
+          apex.dy - 25,
+        ),
+      );
     }
   }
 

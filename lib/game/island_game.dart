@@ -11,9 +11,10 @@ import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
 import '../config.dart';
 import 'dart:ui';
+import '../utils/responsive_size_util.dart';
 
 class IslandGame extends FlameGame
-    with HasCollisionDetection, TapDetector, PanDetector {
+    with HasCollisionDetection, TapDetector, PanDetector, ScrollDetector, ScaleDetector {
   double amplitude;
   double wavelength;
   double bias;
@@ -93,6 +94,10 @@ class IslandGame extends FlameGame
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    
+    // Initialize responsive size utility with game size
+    ResponsiveSizeUtil().init(Size(gameSize.x, gameSize.y));
+    
     _island = IslandComponent(
       amplitude: amplitude,
       wavelength: wavelength,
@@ -144,6 +149,10 @@ class IslandGame extends FlameGame
   void onGameResize(Vector2 newSize) {
     super.onGameResize(newSize);
     gameSize = newSize;
+    
+    // Update responsive size utility with new game size
+    ResponsiveSizeUtil().init(Size(newSize.x, newSize.y));
+    
     if (_isLoaded && _island.isMounted) {
       _island.gameSize = newSize;
       _island.position = newSize / 2;
@@ -817,7 +826,7 @@ class IslandGame extends FlameGame
     _selectionEnd = null;
   }
   
-  // Simple zoom methods
+  // Zoom and pan methods
   void zoomIn() {
     if (zoomLevel < maxZoom) {
       zoomLevel += 0.25;
@@ -835,13 +844,68 @@ class IslandGame extends FlameGame
   void resetZoom() {
     zoomLevel = 1.0;
   }
+  
+  // Gesture-based zoom and pan handlers
+  late double startZoom;
+  Vector2? _lastPanPosition;
+  
+  @override
+  void onScaleStart(ScaleStartInfo info) {
+    startZoom = zoomLevel;
+    _lastPanPosition = info.eventPosition.global.clone();
+  }
+  
+  @override
+  void onScaleUpdate(ScaleUpdateInfo info) {
+    final currentScale = info.scale.global;
+    if (!currentScale.isIdentity()) {
+      // Handle zoom
+      zoomLevel = (startZoom * currentScale.y).clamp(minZoom, maxZoom);
+    } else {
+      // Handle pan - only if not dragging for selection
+      if (!_isDragging && _lastPanPosition != null) {
+        // Calculate delta from last position for more accurate panning
+        final currentPosition = info.eventPosition.global;
+        final delta = currentPosition - _lastPanPosition!;
+        
+        // Apply scaling factor to delta for proper panning at different zoom levels
+        final scaledDelta = delta / zoomLevel;
+        camera.viewfinder.position += Vector2(-scaledDelta.x, -scaledDelta.y);
+        
+        // Update last position
+        _lastPanPosition = currentPosition.clone();
+      }
+    }
+  }
+  
+  @override
+  void onScroll(PointerScrollInfo info) {
+    const zoomPerScrollUnit = 0.05;
+    zoomLevel += info.scrollDelta.global.y.sign * -zoomPerScrollUnit;
+    zoomLevel = zoomLevel.clamp(minZoom, maxZoom);
+  }
 
   // Store last tap position for unit info
   Vector2 _lastTapPosition = Vector2.zero();
+  DateTime _lastTapTime = DateTime.now();
   
   @override
   bool onTapDown(TapDownInfo info) {
     _lastTapPosition = info.eventPosition.global;
+    
+    // Check for double tap to zoom
+    final now = DateTime.now();
+    if (now.difference(_lastTapTime).inMilliseconds < 300) {
+      // Double tap detected - toggle zoom
+      if (zoomLevel > 1.0) {
+        zoomLevel = 1.0; // Reset to normal
+      } else {
+        zoomLevel = 1.75; // Zoom in
+      }
+      _lastTapTime = DateTime.now().subtract(const Duration(milliseconds: 500)); // Prevent triple tap
+      return true;
+    }
+    _lastTapTime = now;
     
     // Apply zoom transformation manually
     Vector2 worldPos = Vector2(

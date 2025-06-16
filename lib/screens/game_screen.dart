@@ -7,6 +7,7 @@ import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
 import '../widgets/game_hud.dart';
 import '../widgets/selected_units_panel.dart';
+import '../widgets/draggable_selected_units_panel.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({Key? key}) : super(key: key);
@@ -240,13 +241,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     ],
                   ),
                   if (showSelectedUnitsPanel)
-                    SelectedUnitsPanel(
-                      unitsInfo: game.getSelectedUnitsInfo(),
-                      onClose: () {
-                        final game = ref.read(gameProvider);
-                        game.clearSelection();
-                        setState(() {});
-                      },
+                    SizedBox(
+                      width: MediaQuery.of(context).size.width,
+                      height: MediaQuery.of(context).size.height * 0.7,
+                      child: Stack(
+                        children: [
+                          DraggableSelectedUnitsPanel(
+                            unitsInfo: game.getSelectedUnitsInfo(),
+                            onClose: () {
+                              final game = ref.read(gameProvider);
+                              game.clearSelection();
+                              setState(() {});
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),
@@ -374,13 +383,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   ],
                 ),
                 if (showSelectedUnitsPanel)
-                  SelectedUnitsPanel(
-                    unitsInfo: game.getSelectedUnitsInfo(),
-                    onClose: () {
-                      final game = ref.read(gameProvider);
-                      game.clearSelection();
-                      setState(() {});
-                    },
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width,
+                    height: MediaQuery.of(context).size.height * 0.7,
+                    child: Stack(
+                      children: [
+                        DraggableSelectedUnitsPanel(
+                          unitsInfo: game.getSelectedUnitsInfo(),
+                          onClose: () {
+                            final game = ref.read(gameProvider);
+                            game.clearSelection();
+                            setState(() {});
+                          },
+                        ),
+                      ],
+                    ),
                   ),
               ],
             ),
