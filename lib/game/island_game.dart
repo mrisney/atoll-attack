@@ -693,8 +693,13 @@ class IslandGame extends FlameGame
   }
 
   void _notifyUIUpdate() {
-    if (onUnitCountsChanged != null) {
-      onUnitCountsChanged!();
+    try {
+      if (onUnitCountsChanged != null) {
+        onUnitCountsChanged!();
+      }
+    } catch (e) {
+      // Ignore errors when the notifier is no longer mounted
+      debugPrint('Error in _notifyUIUpdate: $e');
     }
   }
 

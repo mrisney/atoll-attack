@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flame/components.dart'; // for Vector2
 import 'package:fast_noise/fast_noise.dart' as fn;
+import 'terrain_rules.dart';
+import 'terrain_rules.dart';
 
 class GridCell {
   final int gridX;
@@ -30,6 +32,7 @@ class IslandGridModel {
   final double islandRadius;
   final int gridSteps;
   final fn.SimplexNoise noise;
+  final TerrainRules rules;
 
   final Map<String, List<Offset>> contours;
   final List<GridCell> grid;
@@ -46,7 +49,9 @@ class IslandGridModel {
     required this.contours,
     required this.grid,
     required this.apex,
-  }) : noise = fn.SimplexNoise(seed: seed, frequency: 1.0);
+    TerrainRules? rules,
+  }) : noise = fn.SimplexNoise(seed: seed, frequency: 1.0),
+       this.rules = rules ?? const TerrainRules();
 
   factory IslandGridModel.generate({
     required double amplitude,
@@ -57,7 +62,9 @@ class IslandGridModel {
     required double islandRadius,
     int gridSteps = 40,
     required Map<String, List<Offset>> contours,
+    TerrainRules? rules,
   }) {
+    rules = rules ?? const TerrainRules();
     final List<GridCell> grid = [];
     Offset? apex;
     double maxElevation = -999.0;
@@ -93,6 +100,7 @@ class IslandGridModel {
           seed,
           islandRadius,
           noiseGen,
+          rules,
         );
         int band = _getElevationLevel(
           Vector2(cx, cy),
@@ -102,6 +110,7 @@ class IslandGridModel {
           seed,
           islandRadius,
           noiseGen,
+          rules,
         );
 
         if (isLand && elevation > maxElevation) {
@@ -130,6 +139,7 @@ class IslandGridModel {
       contours: contours,
       grid: grid,
       apex: apex,
+      rules: rules,
     );
   }
 
@@ -142,7 +152,9 @@ class IslandGridModel {
     int seed,
     double islandRadius,
     fn.SimplexNoise noise,
+    [TerrainRules? rules]
   ) {
+    rules = rules ?? const TerrainRules();
     double dist = centered.length;
     double fbm(Vector2 x) {
       double v = 0.0;
@@ -172,20 +184,9 @@ class IslandGridModel {
     noiseValue = (noiseValue + 1.0) * 0.5;
     noiseValue = noiseValue * amplitude + bias;
     
-    // Always place a prominent peak in the highland area
-    // This ensures the apex is always on the rocky part of the island
-    Vector2 highlandPeak = Vector2(0.0, 0.0); // Center of the island
-    noiseValue += addPeak(centered, highlandPeak, 0.2, 0.3); // Strong central peak
-    
-    // Add some smaller random peaks for variety
-    final rng = math.Random(seed);
-    Vector2 peak1 = Vector2(
-      (rng.nextDouble() * 0.4 - 0.2), // -0.2 to 0.2
-      (rng.nextDouble() * 0.4 - 0.2)  // -0.2 to 0.2
-    );
-    
-    // Add smaller peaks with lower intensities
-    noiseValue += addPeak(centered, peak1, 0.1, 0.08);
+    // Place a single prominent peak at a position determined by the seed
+    Vector2 peakPosition = rules.generatePeakPosition(seed);
+    noiseValue += addPeak(centered, peakPosition, rules.peakRadius, rules.peakIntensity);
     
     noiseValue = noiseValue.clamp(0.0, 1.0);
     double falloff = 1.0 - (dist / islandRadius);
@@ -202,14 +203,12 @@ class IslandGridModel {
     int seed,
     double islandRadius,
     fn.SimplexNoise noise,
+    [TerrainRules? rules]
   ) {
+    rules = rules ?? const TerrainRules();
     double e = _getElevationAt(
-        centered, amplitude, wavelength, bias, seed, islandRadius, noise);
-    if (e <= 0.18) return 0; // Deep water
-    if (e <= 0.32) return 1; // Shallow water
-    if (e < 0.50) return 2; // Low land
-    if (e < 0.70) return 3; // Mid elevation
-    return 4; // High peaks
+        centered, amplitude, wavelength, bias, seed, islandRadius, noise, rules);
+    return rules.getElevationBand(e);
   }
 
   // API
@@ -232,16 +231,13 @@ class IslandGridModel {
       seed,
       islandRadius,
       noise,
+      rules,
     );
   }
 
   double getMovementSpeedMultiplier(Offset pos) {
     double e = getElevationAt(pos);
-    if (e <= 0.32) return 0.0; // water
-    if (e < 0.39) return 0.9; // sand/lowland
-    if (e < 0.54) return 0.8; // lowland
-    if (e < 0.7) return 0.6; // upland
-    return 0.5; // peak
+    return rules.getMovementSpeedMultiplier(e);
   }
 
   // Helper methods for Vector2 conversion

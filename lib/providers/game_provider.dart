@@ -11,23 +11,31 @@ class GameNotifier extends StateNotifier<IslandGame> {
     // Set up the callback to trigger updates when unit counts change
     state.onUnitCountsChanged = () {
       // Force state update by creating a new reference
-      state = state;
+      if (mounted) {
+        state = state;
+      }
     };
   }
 
   void forceUpdate() {
     // Trigger a rebuild by creating a new state reference
-    state = state;
+    if (mounted) {
+      state = state;
+    }
   }
 
   // Method to manually trigger updates when unit counts change
   void notifyUnitCountsChanged() {
-    forceUpdate();
+    if (mounted) {
+      forceUpdate();
+    }
   }
 
   // Manual refresh method for forcing updates
   void refreshGameState() {
-    state = state;
+    if (mounted) {
+      state = state;
+    }
   }
 }
 
