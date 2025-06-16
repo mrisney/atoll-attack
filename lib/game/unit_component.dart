@@ -5,12 +5,24 @@ import 'package:flutter/material.dart';
 import '../models/unit_model.dart';
 import 'island_game.dart';
 import 'arrow_component.dart';
+import 'flag_raise_component.dart';
+
+// Flag raising constants
+const double kFlagRaiseDuration = 5.0;
+const double kFlagRaiseRange = 8.0;
+const bool kFlagRaiseRequiresStationary = true;
+const double kFlagRaiseStationaryThreshold = 1.0;
 
 class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   final UnitModel model;
   late Paint _fillPaint;
   late Paint _borderPaint;
   late Paint _selectedPaint;
+
+  // Flag raising component (only for captains)
+  FlagRaiseComponent? _flagRaiseComponent;
+  bool _isAtApex = false;
+  bool _wasAtApex = false;
 
   // Death animation properties
   bool _isPlayingDeathAnimation = false;
@@ -25,7 +37,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   double _victoryAnimationTimer = 0.0;
   static const double _victoryAnimationDuration = 0.5;
   double _victoryScale = 1.0;
-  
+
   // Healing animation properties - to be implemented later when ship component is added
   bool _isHealingAnimation = false;
   double _healingAnimationTimer = 0.0;
@@ -57,6 +69,15 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+
+    // Initialize flag raising component for captains
+    if (model.type == UnitType.captain) {
+      _flagRaiseComponent = FlagRaiseComponent(
+        captain: model,
+        teamColor: model.team == Team.blue ? Colors.blue : Colors.red,
+      );
+      add(_flagRaiseComponent!);
+    }
 
     // This will be implemented when artwork is available
     if (gameRef.useAssets) {
@@ -101,6 +122,11 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   void playDeathAnimation() {
     _isPlayingDeathAnimation = true;
     _deathAnimationTimer = 0.0;
+
+    // Stop flag raising if captain dies
+    if (_flagRaiseComponent != null) {
+      _flagRaiseComponent!.stopRaisingFlag();
+    }
   }
 
   /// Trigger victory animation (for units that win battles)
@@ -108,12 +134,33 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     _isVictoryAnimation = true;
     _victoryAnimationTimer = 0.0;
   }
-  
+
   /// Trigger healing animation
   void playHealingAnimation() {
     _isHealingAnimation = true;
     _healingAnimationTimer = 0.0;
     _healingOpacity = 1.0;
+  }
+
+  /// Check if captain is at apex and can raise flag
+  bool _canRaiseFlag() {
+    if (model.type != UnitType.captain) return false;
+    if (model.health <= 0) return false;
+    if (model.hasPlantedFlag) return false; // Already planted
+
+    final apex = gameRef.getIslandApex();
+    if (apex == null) return false;
+
+    // Check distance to apex
+    final distance = model.position.distanceTo(Vector2(apex.dx, apex.dy));
+    if (distance > kFlagRaiseRange) return false;
+
+    // Check if captain is stationary (if required)
+    if (kFlagRaiseRequiresStationary) {
+      return model.velocity.length <= kFlagRaiseStationaryThreshold;
+    }
+
+    return true;
   }
 
   @override
@@ -130,33 +177,40 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         _borderPaint.color = Colors.black.withOpacity(0.2 * _deathOpacity);
       }
 
-    // Apply victory animation transformations
-    if (_isVictoryAnimation) {
-      canvas.save();
-      canvas.scale(_victoryScale);
-    }
-
-    // Skip rendering if dead and animation is complete
-    if (model.health <= 0 && !_isPlayingDeathAnimation) return;
-
-    if (gameRef.useAssets && unitSprite != null) {
-      _renderWithAssets(canvas);
-    } else {
-      _renderSimpleShapes(canvas);
-    }
-
-    // Always render health bar and selection indicator (unless playing death animation)
-    if (!_isPlayingDeathAnimation) {
-      _renderHealthBar(canvas);
-      if (model.isSelected) {
-        _renderSelectionIndicator(canvas);
+      // Apply victory animation transformations
+      if (_isVictoryAnimation) {
+        canvas.save();
+        canvas.scale(_victoryScale);
       }
-    }
 
-    // Restore canvas if transformations were applied
-    if (_isPlayingDeathAnimation || _isVictoryAnimation) {
-      canvas.restore();
-    }
+      // Skip rendering if dead and animation is complete
+      if (model.health <= 0 && !_isPlayingDeathAnimation) return;
+
+      if (gameRef.useAssets && unitSprite != null) {
+        _renderWithAssets(canvas);
+      } else {
+        _renderSimpleShapes(canvas);
+      }
+
+      // Always render health bar and selection indicator (unless playing death animation)
+      if (!_isPlayingDeathAnimation) {
+        _renderHealthBar(canvas);
+        if (model.isSelected) {
+          _renderSelectionIndicator(canvas);
+        }
+
+        // Render flag raising indicator for captains at apex
+        if (model.type == UnitType.captain &&
+            _isAtApex &&
+            !model.hasPlantedFlag) {
+          _renderFlagRaiseIndicator(canvas);
+        }
+      }
+
+      // Restore canvas if transformations were applied
+      if (_isPlayingDeathAnimation || _isVictoryAnimation) {
+        canvas.restore();
+      }
     } catch (e) {
       // Silently handle any rendering errors
     }
@@ -207,8 +261,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             ..strokeWidth = 1.5
             ..style = PaintingStyle.stroke);
 
-      // Draw flag if planted
-      if (model.hasPlantedFlag) {
+      // Draw flag if planted (this is now handled by FlagRaiseComponent)
+      // Keep this for backward compatibility if flag component isn't loaded
+      if (model.hasPlantedFlag && _flagRaiseComponent == null) {
         final flagPole = Path()
           ..moveTo(size.x / 2, size.y / 2 - 5)
           ..lineTo(size.x / 2, size.y / 2 - 12);
@@ -278,6 +333,55 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     }
   }
 
+  void _renderFlagRaiseIndicator(Canvas canvas) {
+    // Draw a subtle indicator that captain can raise flag here
+    final Paint indicatorPaint = Paint()
+      ..color = Colors.yellow.withOpacity(0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    // Draw pulsing circle around captain
+    final double pulseRadius = model.radius +
+        5 +
+        math.sin(DateTime.now().millisecondsSinceEpoch / 200) * 2;
+    canvas.drawCircle(
+      Offset(size.x / 2, size.y / 2),
+      pulseRadius,
+      indicatorPaint,
+    );
+
+    // Draw "RAISE FLAG" text
+    final TextSpan textSpan = TextSpan(
+      text: 'RAISE FLAG',
+      style: TextStyle(
+        color: Colors.yellow,
+        fontSize: 8,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
+            offset: Offset(0.5, 0.5),
+            blurRadius: 2,
+            color: Colors.black,
+          ),
+        ],
+      ),
+    );
+
+    final TextPainter textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+
+    textPainter.paint(
+      canvas,
+      Offset(
+        size.x / 2 - textPainter.width / 2,
+        size.y / 2 - model.radius - 25,
+      ),
+    );
+  }
+
   void _renderHealthBar(Canvas canvas) {
     final healthPercent = model.health / model.maxHealth;
     if (healthPercent < 1.0) {
@@ -311,7 +415,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   // Track time since last arrow
   double _timeSinceLastArrow = 0.0;
   static const double _arrowCooldown = 0.8; // seconds between arrows
-  
+
   void _renderAttackIndicator(Canvas canvas) {
     if (model.type == UnitType.archer) {
       try {
@@ -319,12 +423,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         double elevation = gameRef.getElevationAt(model.position);
         // Calculate effective range based on elevation
         double effectiveRange = elevation > 0.6 ? 100.0 : model.attackRange;
-        
+
         // Find nearest enemy to shoot arrows at
         final units = gameRef.getAllUnits();
         UnitComponent? nearestEnemy;
         double nearestDistance = effectiveRange;
-        
+
         for (final unit in units) {
           if (unit.model.team != model.team && unit.model.health > 0) {
             final distance = model.position.distanceTo(unit.model.position);
@@ -334,12 +438,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             }
           }
         }
-        
+
         if (nearestEnemy != null) {
           // Draw simple indicator for immediate feedback
           final direction = (nearestEnemy.position - position).normalized();
           final start = Vector2(size.x / 2, size.y / 2);
-          
+
           // Draw targeting line
           canvas.drawLine(
             Offset(start.x, start.y),
@@ -385,7 +489,6 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   void _renderDeathEffect(Canvas canvas) {
     // Draw some death particles/effects
     final center = Offset(size.x / 2, size.y / 2);
-    final progress = _deathAnimationTimer / _deathAnimationDuration;
 
     // Draw fading red crosses or X marks
     final paint = Paint()
@@ -430,6 +533,28 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   void update(double dt) {
     super.update(dt);
 
+    // Handle flag raising logic for captains
+    if (model.type == UnitType.captain && _flagRaiseComponent != null) {
+      _wasAtApex = _isAtApex;
+      _isAtApex = _canRaiseFlag();
+
+      // Start flag raising if captain just arrived at apex and is stationary
+      if (_isAtApex && !_wasAtApex && !_flagRaiseComponent!.isFlagFullyRaised) {
+        _flagRaiseComponent!.startRaisingFlag();
+      }
+
+      // Stop flag raising if captain moved away from apex or started moving
+      if (!_isAtApex && _wasAtApex) {
+        _flagRaiseComponent!.stopRaisingFlag();
+      }
+
+      // Check if flag is fully raised for victory
+      if (_flagRaiseComponent!.isFlagFullyRaised && !model.hasPlantedFlag) {
+        model.hasPlantedFlag = true;
+        gameRef.captainReachedApex(this);
+      }
+    }
+
     // Update death animation
     if (_isPlayingDeathAnimation) {
       _deathAnimationTimer += dt;
@@ -451,7 +576,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       }
       return; // Don't update model during death animation
     }
-    
+
     // Check if archer should be in attack state based on nearby enemies
     if (model.type == UnitType.archer) {
       try {
@@ -463,14 +588,14 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         } catch (e) {
           // Use default elevation if error occurs
         }
-        
+
         // Calculate effective range based on elevation
         double effectiveRange = elevation > 0.6 ? 100.0 : model.attackRange;
-        
+
         // Find nearest enemy in range
         UnitComponent? nearestEnemy;
         double nearestDistance = effectiveRange;
-        
+
         for (final unit in units) {
           if (unit.model.team != model.team && unit.model.health > 0) {
             final distance = model.position.distanceTo(unit.model.position);
@@ -481,24 +606,25 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             }
           }
         }
-        
+
         // Spawn arrow if in attack state and cooldown elapsed
         if (model.state == UnitState.attacking && nearestEnemy != null) {
-          _timeSinceLastArrow += 1/60; // Approximate for dt
+          _timeSinceLastArrow += 1 / 60; // Approximate for dt
           if (_timeSinceLastArrow >= _arrowCooldown) {
             _timeSinceLastArrow = 0;
-            
+
             // Create and add arrow component
             final arrow = ArrowComponent(
               startPosition: position.clone(),
               targetPosition: nearestEnemy.position.clone(),
               team: model.team,
             );
-            
+
             gameRef.add(arrow);
           }
         } else {
-          _timeSinceLastArrow = _arrowCooldown; // Ready to fire immediately when enemy appears
+          _timeSinceLastArrow =
+              _arrowCooldown; // Ready to fire immediately when enemy appears
         }
       } catch (e) {
         // Silently handle any errors in attack state detection
@@ -527,7 +653,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       if (!_isPlayingDeathAnimation) {
         playDeathAnimation();
       }
-      
+
       // Mark for removal if dead and animation is complete
       if (isMounted && !_isPlayingDeathAnimation) {
         removeFromParent();
@@ -559,11 +685,6 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       playVictoryAnimation();
     }
 
-    // Check for captain victory
-    if (model.type == UnitType.captain && model.hasPlantedFlag) {
-      gameRef.captainReachedApex(this);
-    }
-
     // Update component position from model
     position.setFrom(model.position);
 
@@ -578,18 +699,23 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   void setTargetPosition(Vector2 target) {
     // Set the exact target position from player input
     model.targetPosition = target.clone();
-    
+
     // Force the unit to prioritize movement to the new target
     model.forceRedirect = true;
-    
+
     // Reset combat state if unit was engaged
     if (model.state == UnitState.attacking) {
       model.state = UnitState.moving;
     }
-    
+
+    // Stop flag raising if captain is ordered to move
+    if (model.type == UnitType.captain && _flagRaiseComponent != null) {
+      _flagRaiseComponent!.stopRaisingFlag();
+    }
+
     // Don't use pathfinding - let units move irregularly
     model.path = null;
-    
+
     // We no longer auto-deselect units to allow for multiple commands
   }
 
@@ -597,19 +723,29 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     final center = position + size / 2;
     return center.distanceTo(point) <= model.radius;
   }
-  
+
   // Show unit information when tapped
   void showUnitInfo() {
     final healthPercent = (model.health / model.maxHealth * 100).toInt();
     final typeStr = model.type.toString().split('.').last;
     final teamStr = model.team.toString().split('.').last;
-    
+
+    String flagStatus = '';
+    if (model.type == UnitType.captain) {
+      if (model.hasPlantedFlag) {
+        flagStatus = '\nFLAG PLANTED!';
+      } else if (_flagRaiseComponent != null &&
+          _flagRaiseComponent!.progress > 0) {
+        flagStatus =
+            '\nRaising flag: ${(_flagRaiseComponent!.progress * 100).round()}%';
+      } else if (_isAtApex) {
+        flagStatus = '\nAt apex - ready to raise flag!';
+      }
+    }
+
     // Display unit information using game's notification system
-    gameRef.showUnitInfo(
-      "Unit: ${typeStr.toUpperCase()}\n"
-      "Team: ${teamStr.toUpperCase()}\n"
-      "Health: $healthPercent%\n"
-      "${model.type == UnitType.captain && model.hasPlantedFlag ? 'FLAG PLANTED!' : ''}"
-    );
+    gameRef.showUnitInfo("Unit: ${typeStr.toUpperCase()}\n"
+        "Team: ${teamStr.toUpperCase()}\n"
+        "Health: $healthPercent%$flagStatus");
   }
 }
