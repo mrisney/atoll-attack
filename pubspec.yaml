@@ -19,6 +19,7 @@ dependencies:
   riverpod: ^2.6.1
   hooks_riverpod: ^2.6.1
   flutter_riverpod: ^2.6.1
+  flutter_screenutil: ^5.9.3
  
 
 dev_dependencies:
