@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/screen_util.dart';
+import '../utils/responsive_size_util.dart';
+import 'dart:math' as math;
 
 class DraggableSelectedUnitsPanel extends StatefulWidget {
   final List<Map<String, dynamic>> unitsInfo;
@@ -20,14 +22,37 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
   Offset? _position;
   final ScrollController _scrollController = ScrollController();
   bool _isExpanded = false;
+  
+  // Keep track of panel boundaries to prevent going off-screen
+  double _minX = 0;
+  double _minY = 0;
+  double _maxX = 0;
+  double _maxY = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {
-        _position = ScreenUtil.getPosition(context, 5, 10);
-      });
+      _initializePosition();
+    });
+  }
+  
+  void _initializePosition() {
+    final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+    
+    // Set boundaries
+    _minX = safeArea.left;
+    _minY = safeArea.top;
+    _maxX = screenSize.width - (screenSize.width * 0.25) - safeArea.right;
+    _maxY = screenSize.height - 100 - safeArea.bottom;
+    
+    setState(() {
+      // Start at top-left with some padding
+      _position = Offset(
+        _minX + 10,
+        _minY + 10
+      );
     });
   }
 
@@ -42,11 +67,16 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
     if (widget.unitsInfo.isEmpty) return const SizedBox.shrink();
     
     if (_position == null) {
-      _position = ScreenUtil.getPosition(context, 5, 10);
+      _initializePosition();
     }
 
     final screenSize = MediaQuery.of(context).size;
-    final width = screenSize.width * 0.35;
+    final isLandscape = screenSize.width > screenSize.height;
+    
+    // Responsive width based on screen orientation
+    final width = isLandscape 
+        ? screenSize.width * 0.25 
+        : screenSize.width * 0.4;
     
     return Positioned(
       left: _position!.dx,
@@ -54,16 +84,21 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
       child: GestureDetector(
         onPanUpdate: (details) {
           setState(() {
-            _position = Offset(
-              _position!.dx + details.delta.dx,
-              _position!.dy + details.delta.dy,
-            );
+            // Calculate new position with boundary constraints
+            final newX = (_position!.dx + details.delta.dx).clamp(_minX, _maxX);
+            final newY = (_position!.dy + details.delta.dy).clamp(_minY, _maxY);
+            
+            _position = Offset(newX, newY);
           });
         },
         child: Material(
           color: Colors.transparent,
           child: Container(
             width: width,
+            constraints: BoxConstraints(
+              maxWidth: isLandscape ? 300 : width,
+              maxHeight: screenSize.height * 0.7,
+            ),
             decoration: BoxDecoration(
               color: Colors.black.withOpacity(0.7),
               borderRadius: BorderRadius.circular(8),
@@ -75,7 +110,7 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
               children: [
                 _buildCompactHeader(),
                 if (_isExpanded)
-                  _buildExpandedList(screenSize.height * 0.5)
+                  _buildExpandedList(screenSize.height * 0.4)
                 else
                   _buildCompactInfo(widget.unitsInfo[_currentIndex]),
               ],
@@ -87,16 +122,22 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
   }
 
   Widget _buildCompactHeader() {
+    // Get team color
+    final Color headerColor = widget.unitsInfo.isEmpty 
+        ? Colors.blue.withOpacity(0.7)
+        : (widget.unitsInfo.first['team'] == 'BLUE' ? Colors.blue : Colors.red).withOpacity(0.7);
+    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black45,
+        color: Colors.black.withOpacity(0.7),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.drag_indicator, color: Colors.white54, size: 14),
-          const SizedBox(width: 4),
+          const Icon(Icons.drag_indicator, color: Colors.white70, size: 14),
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
               'Units (${widget.unitsInfo.length})',
@@ -109,22 +150,31 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
             ),
           ),
           if (!_isExpanded && widget.unitsInfo.length > 1)
-            _buildNavigation(),
-          IconButton(
-            icon: Icon(
-              _isExpanded ? Icons.unfold_less : Icons.unfold_more,
-              color: Colors.white70,
-              size: 14,
+            Flexible(child: _buildNavigation()),
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: IconButton(
+              icon: Icon(
+                _isExpanded ? Icons.unfold_less : Icons.unfold_more,
+                color: Colors.white70,
+                size: 14,
+              ),
+              onPressed: () => setState(() => _isExpanded = !_isExpanded),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-            onPressed: () => setState(() => _isExpanded = !_isExpanded),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
           ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white70, size: 14),
-            onPressed: widget.onClose,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white70, size: 14),
+              onPressed: widget.onClose,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
           ),
         ],
       ),
@@ -132,25 +182,25 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
   }
   
   Widget _buildNavigation() {
-    return Container(
-      margin: const EdgeInsets.only(right: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InkWell(
-            onTap: _previousUnit,
-            child: const Icon(Icons.chevron_left, color: Colors.white70, size: 14),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: _previousUnit,
+          child: const Icon(Icons.chevron_left, color: Colors.white70, size: 14),
+        ),
+        Text(
+          '${_currentIndex + 1}/${widget.unitsInfo.length}',
+          style: const TextStyle(
+            color: Colors.white70, 
+            fontSize: 10,
           ),
-          Text(
-            '${_currentIndex + 1}/${widget.unitsInfo.length}',
-            style: const TextStyle(color: Colors.white70, fontSize: 10),
-          ),
-          InkWell(
-            onTap: _nextUnit,
-            child: const Icon(Icons.chevron_right, color: Colors.white70, size: 14),
-          ),
-        ],
-      ),
+        ),
+        InkWell(
+          onTap: _nextUnit,
+          child: const Icon(Icons.chevron_right, color: Colors.white70, size: 14),
+        ),
+      ],
     );
   }
 
@@ -159,11 +209,26 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
     final String team = unitInfo['team'] ?? '';
     final int health = unitInfo['health'] ?? 0;
     final bool hasFlag = unitInfo['hasFlag'] ?? false;
+    final String id = unitInfo['id'] ?? '';
     
     Color teamColor = team == 'BLUE' ? Colors.blue : Colors.red;
     
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
+    // Highlight the current unit in expanded view
+    final bool isCurrentUnit = _isExpanded && 
+        widget.unitsInfo.indexWhere((info) => info['id'] == id) == _currentIndex;
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      padding: const EdgeInsets.all(6.0),
+      decoration: BoxDecoration(
+        color: isCurrentUnit 
+            ? teamColor.withOpacity(0.2) 
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: isCurrentUnit 
+            ? Border.all(color: teamColor.withOpacity(0.5), width: 1) 
+            : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -181,10 +246,10 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
               Expanded(
                 child: Text(
                   '$team $type',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: isCurrentUnit ? FontWeight.bold : FontWeight.w600,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -233,28 +298,78 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
   }
 
   Widget _buildExpandedList(double maxHeight) {
+    // Calculate a safer height that won't overflow
+    final screenSize = MediaQuery.of(context).size;
+    final safeHeight = math.min(maxHeight, screenSize.height * 0.3);
+    
     return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: ListView.builder(
+      constraints: BoxConstraints(
+        maxHeight: safeHeight,
+        minHeight: 50,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.5),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+      ),
+      child: Scrollbar(
         controller: _scrollController,
-        shrinkWrap: true,
-        itemCount: widget.unitsInfo.length,
-        itemBuilder: (context, index) {
-          return _buildCompactInfo(widget.unitsInfo[index]);
-        },
+        thumbVisibility: true,
+        thickness: 4,
+        radius: const Radius.circular(4),
+        child: ListView.builder(
+          controller: _scrollController,
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: widget.unitsInfo.length,
+          itemBuilder: (context, index) {
+            return _buildCompactInfo(widget.unitsInfo[index]);
+          },
+        ),
       ),
     );
   }
 
   void _nextUnit() {
+    if (widget.unitsInfo.isEmpty) return;
+    
     setState(() {
       _currentIndex = (_currentIndex + 1) % widget.unitsInfo.length;
+      
+      // If in expanded mode, scroll to the selected item
+      if (_isExpanded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToCurrentIndex();
+        });
+      }
     });
   }
 
   void _previousUnit() {
+    if (widget.unitsInfo.isEmpty) return;
+    
     setState(() {
       _currentIndex = (_currentIndex - 1 + widget.unitsInfo.length) % widget.unitsInfo.length;
+      
+      // If in expanded mode, scroll to the selected item
+      if (_isExpanded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToCurrentIndex();
+        });
+      }
     });
+  }
+  
+  void _scrollToCurrentIndex() {
+    if (!_scrollController.hasClients) return;
+    
+    // Calculate approximate position of the item
+    final itemHeight = 50.0; // Estimated height of each item
+    final offset = _currentIndex * itemHeight;
+    
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 }

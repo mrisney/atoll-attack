@@ -25,6 +25,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   double _victoryAnimationTimer = 0.0;
   static const double _victoryAnimationDuration = 0.5;
   double _victoryScale = 1.0;
+  
+  // Healing animation properties - to be implemented later when ship component is added
+  bool _isHealingAnimation = false;
+  double _healingAnimationTimer = 0.0;
+  static const double _healingAnimationDuration = 1.0;
+  double _healingOpacity = 0.0;
 
   // Will be used when artwork is available
   Sprite? unitSprite;
@@ -101,6 +107,13 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   void playVictoryAnimation() {
     _isVictoryAnimation = true;
     _victoryAnimationTimer = 0.0;
+  }
+  
+  /// Trigger healing animation
+  void playHealingAnimation() {
+    _isHealingAnimation = true;
+    _healingAnimationTimer = 0.0;
+    _healingOpacity = 1.0;
   }
 
   @override
