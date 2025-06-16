@@ -6,12 +6,10 @@ import '../models/unit_model.dart';
 import 'island_game.dart';
 import 'arrow_component.dart';
 import 'flag_raise_component.dart';
+import 'progress_bar_component.dart';
 
-// Flag raising constants
-const double kFlagRaiseDuration = 5.0;
-const double kFlagRaiseRange = 8.0;
-const bool kFlagRaiseRequiresStationary = true;
-const double kFlagRaiseStationaryThreshold = 1.0;
+// Import flag raising constants from config
+import '../config.dart';
 
 class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   final UnitModel model;
@@ -23,6 +21,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   FlagRaiseComponent? _flagRaiseComponent;
   bool _isAtApex = false;
   bool _wasAtApex = false;
+  
+  // Progress bar component
+  ProgressBarComponent? _progressBarComponent;
 
   // Death animation properties
   bool _isPlayingDeathAnimation = false;
@@ -77,6 +78,16 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         teamColor: model.team == Team.blue ? Colors.blue : Colors.red,
       );
       add(_flagRaiseComponent!);
+      
+      // Add progress bar above the captain
+      _progressBarComponent = ProgressBarComponent(
+        unit: model,
+        barColor: model.team == Team.blue ? Colors.blue : Colors.red,
+        label: 'Progress',
+        progress: 0.0,
+        verticalOffset: 20.0, // Position it above the flag raising indicator
+      );
+      add(_progressBarComponent!);
     }
 
     // This will be implemented when artwork is available
@@ -126,6 +137,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     // Stop flag raising if captain dies
     if (_flagRaiseComponent != null) {
       _flagRaiseComponent!.stopRaisingFlag();
+    }
+    
+    // Remove progress bar if unit dies
+    if (_progressBarComponent != null) {
+      remove(_progressBarComponent!);
+      _progressBarComponent = null;
     }
   }
 
@@ -553,6 +570,25 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         model.hasPlantedFlag = true;
         gameRef.captainReachedApex(this);
       }
+      
+      // Update progress bar with current flag raising progress
+      if (_progressBarComponent != null) {
+        // Calculate progress value based on flag raising or game state
+        double progressValue = 0.0;
+        
+        // If flag raising is in progress, use that progress
+        if (_flagRaiseComponent!.progress > 0) {
+          progressValue = _flagRaiseComponent!.progress;
+        } 
+        // Otherwise use a sample progress value
+        else {
+          // For now, use a simple oscillating value for demonstration
+          progressValue = (math.sin(DateTime.now().millisecondsSinceEpoch / 1000) + 1) / 2;
+        }
+        
+        // Update the progress bar component
+        _progressBarComponent!.updateProgress(progressValue);
+      }
     }
 
     // Update death animation
@@ -702,6 +738,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
     // Force the unit to prioritize movement to the new target
     model.forceRedirect = true;
+    
+    // Clear any targeted enemy
+    model.targetEnemy = null;
 
     // Reset combat state if unit was engaged
     if (model.state == UnitState.attacking) {
@@ -717,6 +756,30 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     model.path = null;
 
     // We no longer auto-deselect units to allow for multiple commands
+  }
+  
+  /// Set an enemy unit as target
+  void setTargetEnemy(UnitModel enemy) {
+    // Set the enemy as target
+    model.targetEnemy = enemy;
+    
+    // Also set initial target position to enemy position
+    model.targetPosition = enemy.position.clone();
+    
+    // Force the unit to prioritize this target
+    model.forceRedirect = true;
+    
+    // Set attacking state if unit can attack
+    if (model.attackPower > 0) {
+      model.state = UnitState.attacking;
+    } else {
+      model.state = UnitState.moving;
+    }
+    
+    // Stop flag raising if captain is ordered to attack
+    if (model.type == UnitType.captain && _flagRaiseComponent != null) {
+      _flagRaiseComponent!.stopRaisingFlag();
+    }
   }
 
   bool containsPoint(Vector2 point) {

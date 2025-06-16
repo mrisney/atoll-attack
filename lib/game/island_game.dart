@@ -9,6 +9,7 @@ import 'unit_component.dart';
 import '../models/unit_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
+import '../managers/unit_selection_manager.dart';
 import '../config.dart';
 import 'dart:ui';
 import '../utils/responsive_size_util.dart';
@@ -40,7 +41,6 @@ class IslandGame extends FlameGame
   late IslandComponent _island;
   bool _isLoaded = false;
   final List<UnitComponent> _units = [];
-  final List<UnitComponent> _selectedUnits = [];
   PathfindingService? _pathfindingService;
 
   // Game state
@@ -74,6 +74,9 @@ class IslandGame extends FlameGame
   double _markerPulseScale = 1.0;
   double _markerTimer = 0.0;
   DateTime _lastTapTime = DateTime.now();
+  
+  // Unit selection manager
+  late UnitSelectionManager _unitSelectionManager;
 
   // Paint objects
   final Paint _selectionPaint = Paint()
@@ -96,7 +99,10 @@ class IslandGame extends FlameGame
     required this.gameSize,
     required this.islandRadius,
     this.showPerimeter = false,
-  });
+  }) {
+    // Initialize unit selection manager in constructor to avoid late initialization errors
+    _unitSelectionManager = UnitSelectionManager(this);
+  }
 
   @override
   Color backgroundColor() => const Color(0xFF1a1a2e);
@@ -132,7 +138,7 @@ class IslandGame extends FlameGame
     GameRules.resetGame();
     _blueUnitsRemaining = kTotalUnitsPerTeam;
     _redUnitsRemaining = kTotalUnitsPerTeam;
-
+    
     _isLoaded = true;
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
   }
@@ -228,22 +234,15 @@ class IslandGame extends FlameGame
     // Check for unit tap
     final tappedUnit = _findUnitAtPosition(worldPos);
     if (tappedUnit != null) {
-      tappedUnit.showUnitInfo();
-      if (!tappedUnit.model.isSelected) {
-        clearSelection();
-        tappedUnit.setSelected(true);
-        _selectedUnits.add(tappedUnit);
-        _notifyUIUpdate();
-      }
+      // Handle unit tap through selection manager
+      _unitSelectionManager.handleUnitTap(tappedUnit);
+      _notifyUIUpdate();
       return true;
     }
 
-    // Move selected units or clear selection
-    if (_selectedUnits.isNotEmpty) {
-      _moveSelectedUnits(worldPos);
-    } else {
-      clearSelection();
-    }
+    // Handle tap on empty space
+    _unitSelectionManager.handleEmptyTap(worldPos);
+    _notifyUIUpdate();
 
     return true;
   }
@@ -268,14 +267,14 @@ class IslandGame extends FlameGame
       final distance = (_selectionEnd! - _selectionStart!).length;
 
       if (distance > 15) {
-        // Drag selection
-        _selectUnitsInBox(_selectionStart!, _selectionEnd!);
+        // Drag selection using selection manager
+        _unitSelectionManager.selectUnitsInBox(_selectionStart!, _selectionEnd!);
+        _notifyUIUpdate();
       } else {
         // Single click movement
         final worldPos = screenToWorldPosition(_selectionStart!);
-        if (_selectedUnits.isNotEmpty) {
-          _moveSelectedUnits(worldPos);
-          clearSelection();
+        if (_unitSelectionManager.hasSelection) {
+          _unitSelectionManager.moveSelectedUnits(worldPos);
         }
       }
     }
@@ -318,48 +317,19 @@ class IslandGame extends FlameGame
   // UNIT SELECTION AND MOVEMENT
   // =============================================================================
 
+  // This method is now deprecated - use UnitSelectionManager instead
   void _selectUnitsInBox(Vector2 screenStart, Vector2 screenEnd) {
-    clearSelection();
-
-    final minX = math.min(screenStart.x, screenEnd.x);
-    final maxX = math.max(screenStart.x, screenEnd.x);
-    final minY = math.min(screenStart.y, screenEnd.y);
-    final maxY = math.max(screenStart.y, screenEnd.y);
-
-    // Get player team (last spawned unit's team)
-    Team? playerTeam;
-    if (_units.isNotEmpty) {
-      playerTeam = _units.last.model.team;
-    }
-
-    const selectionBuffer = 10.0;
-
-    for (final unit in _units) {
-      if (unit.model.health <= 0) continue;
-      if (playerTeam != null && unit.model.team != playerTeam) continue;
-
-      // Convert unit world position to screen position for selection
-      final unitScreenPos = worldToScreenPosition(unit.position);
-
-      if (unitScreenPos.x >= minX - selectionBuffer &&
-          unitScreenPos.x <= maxX + selectionBuffer &&
-          unitScreenPos.y >= minY - selectionBuffer &&
-          unitScreenPos.y <= maxY + selectionBuffer) {
-        unit.setSelected(true);
-        _selectedUnits.add(unit);
-      }
-    }
-
+    // Delegate to the unit selection manager
+    _unitSelectionManager.selectUnitsInBox(screenStart, screenEnd);
     _notifyUIUpdate();
-    debugPrint('Selected ${_selectedUnits.length} units');
   }
 
   void _moveSelectedUnits(Vector2 worldTarget) {
-    if (_selectedUnits.isEmpty) return;
+    if (_unitSelectionManager.selectedUnits.isEmpty) return;
 
     _createDestinationMarker(worldTarget);
 
-    for (final unit in _selectedUnits) {
+    for (final unit in _unitSelectionManager.selectedUnits) {
       unit.setTargetPosition(worldTarget);
       debugPrint('Moving ${unit.model.type.name} to $worldTarget');
     }
@@ -377,10 +347,7 @@ class IslandGame extends FlameGame
   }
 
   void clearSelection() {
-    for (final unit in _selectedUnits) {
-      unit.setSelected(false);
-    }
-    _selectedUnits.clear();
+    _unitSelectionManager.clearSelection();
     _notifyUIUpdate();
   }
 
@@ -399,6 +366,11 @@ class IslandGame extends FlameGame
         _markerOpacity = 0.3;
       }
     });
+  }
+  
+  /// Public method to create destination marker (for UnitSelectionManager)
+  void createDestinationMarker(Vector2 worldPosition) {
+    _createDestinationMarker(worldPosition);
   }
 
   void _updateDestinationMarker(double dt) {
@@ -584,7 +556,12 @@ class IslandGame extends FlameGame
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
           _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
-          _selectedUnits.remove(unitToRemove);
+          
+          // If unit is selected, clear it from selection
+          if (unitToRemove.model.isSelected) {
+            _unitSelectionManager.clearSelection();
+          }
+          
           unitToRemove.playDeathAnimation();
           unitsRemoved = true;
 
@@ -643,6 +620,9 @@ class IslandGame extends FlameGame
       final screenPos = worldToScreenPosition(_destinationMarker!);
       _drawDestinationMarker(canvas, screenPos);
     }
+    
+    // Render attack range indicators
+    _unitSelectionManager.renderAttackRange(canvas);
   }
 
   void _drawDestinationMarker(Canvas canvas, Vector2 screenPos) {
@@ -808,9 +788,9 @@ class IslandGame extends FlameGame
   int get redUnitsSpawned =>
       _redCaptainsSpawned + _redArchersSpawned + _redSwordsmenSpawned;
 
-  List<UnitComponent> get selectedUnits => _selectedUnits;
+  List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
   UnitComponent? get selectedUnit =>
-      _selectedUnits.isNotEmpty ? _selectedUnits.first : null;
+      _unitSelectionManager.selectedUnits.isNotEmpty ? _unitSelectionManager.selectedUnits.first : null;
 
   double get blueHealthPercent {
     final blueUnits = _units
@@ -838,8 +818,9 @@ class IslandGame extends FlameGame
 
   List<Map<String, dynamic>> getSelectedUnitsInfo() {
     final List<Map<String, dynamic>> unitsInfo = [];
+    final selectedUnits = _unitSelectionManager.selectedUnits;
 
-    for (final unit in _selectedUnits) {
+    for (final unit in selectedUnits) {
       final healthPercent =
           (unit.model.health / unit.model.maxHealth * 100).toInt();
       final typeStr = unit.model.type.toString().split('.').last;
