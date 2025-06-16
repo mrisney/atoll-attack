@@ -1,3 +1,4 @@
+// config.dart - Global game configuration constants
 import 'package:flame/components.dart';
 
 // Default island settings
