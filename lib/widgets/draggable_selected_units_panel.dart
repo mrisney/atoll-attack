@@ -208,6 +208,7 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 10,
@@ -218,25 +219,31 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
               ),
             ),
             const SizedBox(width: 6),
-            Text(
-              '$team $type',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                '$team $type',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
             if (hasFlag)
-              const Icon(
-                Icons.flag,
-                color: Colors.yellow,
-                size: 16,
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(
+                  Icons.flag,
+                  color: Colors.yellow,
+                  size: 16,
+                ),
               ),
           ],
         ),
         const SizedBox(height: 6),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
               'Health: ',
@@ -245,7 +252,8 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
                 fontSize: 12,
               ),
             ),
-            Expanded(
+            SizedBox(
+              width: 100,
               child: Container(
                 height: 8,
                 decoration: BoxDecoration(
@@ -283,6 +291,7 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
         if (_isExpanded) ...[
           const SizedBox(height: 4),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'Type: ',
@@ -291,11 +300,14 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
                   fontSize: 11,
                 ),
               ),
-              Text(
-                _getUnitTypeDescription(type),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
+              Flexible(
+                child: Text(
+                  _getUnitTypeDescription(type),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
