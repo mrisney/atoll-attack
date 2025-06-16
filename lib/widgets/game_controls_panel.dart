@@ -7,7 +7,7 @@ import '../providers/game_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart'; // Add this import
 import '../models/unit_model.dart';
-import '../config.dart';
+import '../constants/game_config.dart';
 
 class GameControlsPanel extends ConsumerWidget {
   final VoidCallback? onClose;

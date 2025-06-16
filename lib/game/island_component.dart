@@ -5,7 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:fast_noise/fast_noise.dart' as fn;
 import '../models/island_model.dart';
-import '../config.dart';
+import '../constants/game_config.dart';
 
 /// Helper class for shader coordinate extraction (unchanged from your working version)
 class ShaderCoordinateExtractor {
@@ -131,12 +131,13 @@ class ShaderCoordinateExtractor {
   List<Offset> _smoothCoordinates(
       List<Offset> coordinates, int smoothingLevel) {
     // Apply additional smoothing if enabled in config
-    int effectiveSmoothingLevel = kSmoothContours 
-        ? smoothingLevel + kContourSmoothingLevel 
+    int effectiveSmoothingLevel = kSmoothContours
+        ? smoothingLevel + kContourSmoothingLevel
         : smoothingLevel;
-        
-    if (coordinates.length < 5 || effectiveSmoothingLevel <= 0) return coordinates;
-    
+
+    if (coordinates.length < 5 || effectiveSmoothingLevel <= 0)
+      return coordinates;
+
     List<Offset> result = coordinates;
     for (int pass = 0; pass < effectiveSmoothingLevel; pass++) {
       List<Offset> smoothed = [];
@@ -163,7 +164,7 @@ class ShaderCoordinateExtractor {
 class IslandComponent extends PositionComponent {
   // Island model data
   IslandGridModel? _model;
-  
+
   // Rendering properties
   double amplitude;
   double wavelength;
@@ -242,7 +243,7 @@ class IslandComponent extends PositionComponent {
 
   void _buildIslandModel() {
     if (_shaderContours.isEmpty) return;
-    
+
     _model = IslandGridModel.generate(
       amplitude: amplitude,
       wavelength: wavelength,
@@ -262,13 +263,13 @@ class IslandComponent extends PositionComponent {
     } else {
       _renderFallback(canvas);
     }
-    
+
     // Draw perimeter and grid only if showPerimeter is true
     if (showPerimeter) {
       _drawPerimeter(canvas);
       _drawGridOnLand(canvas);
     }
-    
+
     // Always draw apex (highpoint) regardless of showPerimeter setting
     final apex = _model?.getApex();
     if (apex != null) {
@@ -277,14 +278,14 @@ class IslandComponent extends PositionComponent {
         ..color = Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
-        
+
       final innerPaint = Paint()
         ..color = Colors.red
         ..style = PaintingStyle.fill;
-        
+
       canvas.drawCircle(apex, 8, innerPaint);
       canvas.drawCircle(apex, 8, outerPaint);
-      
+
       // Add "APEX" label
       final textStyle = TextStyle(
         color: Colors.white,
@@ -298,7 +299,7 @@ class IslandComponent extends PositionComponent {
           ),
         ],
       );
-      
+
       final textSpan = TextSpan(text: "APEX", style: textStyle);
       final textPainter = TextPainter(
         text: textSpan,
@@ -306,7 +307,7 @@ class IslandComponent extends PositionComponent {
       );
       textPainter.layout();
       textPainter.paint(
-        canvas, 
+        canvas,
         Offset(
           apex.dx - textPainter.width / 2,
           apex.dy - 25,
@@ -360,47 +361,46 @@ class IslandComponent extends PositionComponent {
     // Device-specific scaling factor to ensure contours render correctly on all devices
     final devicePixelRatio = ui.window.devicePixelRatio;
     final scaleFactor = devicePixelRatio > 2.5 ? 1.0 / devicePixelRatio : 1.0;
-    
+
     final contourColors = {
       'coastline': Colors.blue.shade800,
       'shallow': Colors.green.shade300,
       'midland': Colors.orange.shade300,
       'highland': Colors.brown.shade300,
     };
-    
+
     final elevationValues = {
       'coastline': 0,
       'shallow': 100,
       'midland': 300,
       'highland': 500,
     };
-    
+
     // Draw contours from highest to lowest for proper layering
     final sortedKeys = ['highland', 'midland', 'shallow', 'coastline'];
-    
+
     for (final key in sortedKeys) {
       final points = _shaderContours[key];
       if (points == null || points.length < 3) continue;
-      
+
       // Apply scaling to points if needed for high-DPI devices
       List<Offset> scaledPoints = points;
       if (scaleFactor != 1.0) {
-        scaledPoints = points.map((p) => Offset(
-          p.dx * scaleFactor, 
-          p.dy * scaleFactor
-        )).toList();
+        scaledPoints = points
+            .map((p) => Offset(p.dx * scaleFactor, p.dy * scaleFactor))
+            .toList();
       }
-      
+
       // Fill contours with semi-transparent color
       final fillPaint = Paint()
         ..color = contourColors[key]!.withOpacity(0.2)
         ..style = PaintingStyle.fill;
-        
+
       final strokePaint = Paint()
         ..color = contourColors[key]!
         ..strokeWidth = key == 'coastline' ? 2.5 : 1.5
         ..style = PaintingStyle.stroke;
-      
+
       final path = Path();
       if (scaledPoints.isNotEmpty) {
         path.moveTo(scaledPoints[0].dx, scaledPoints[0].dy);
@@ -409,11 +409,11 @@ class IslandComponent extends PositionComponent {
         }
         path.close();
       }
-      
+
       // Fill first, then stroke
       canvas.drawPath(path, fillPaint);
       canvas.drawPath(path, strokePaint);
-      
+
       // Add elevation labels if enabled
       if (kShowElevationLabels && key != 'coastline') {
         final elevation = elevationValues[key];
@@ -422,11 +422,11 @@ class IslandComponent extends PositionComponent {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         );
-        
+
         // Add a few elevation markers along the contour
         final numLabels = key == 'highland' ? 1 : 2;
         final step = scaledPoints.length ~/ (numLabels + 1);
-        
+
         for (int i = 1; i <= numLabels; i++) {
           final index = i * step;
           if (index < scaledPoints.length) {
@@ -437,7 +437,7 @@ class IslandComponent extends PositionComponent {
               textDirection: TextDirection.ltr,
             );
             textPainter.layout();
-            
+
             // Draw with white background for readability
             final bgRect = Rect.fromCenter(
               center: position,
@@ -448,9 +448,9 @@ class IslandComponent extends PositionComponent {
               bgRect,
               Paint()..color = Colors.white.withOpacity(0.7),
             );
-            
+
             textPainter.paint(
-              canvas, 
+              canvas,
               Offset(
                 position.dx - textPainter.width / 2,
                 position.dy - textPainter.height / 2,
@@ -523,6 +523,7 @@ class IslandComponent extends PositionComponent {
     // The apex is the highest point on the island
     return _model!.getApex();
   }
+
   Map<String, List<Offset>> getContours() => _model?.getContours() ?? {};
   List<Offset> getCoastline() => _model?.getContour('coastline') ?? [];
   List<Offset> getHighGroundPerimeter() => _model?.getContour('highland') ?? [];

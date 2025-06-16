@@ -1,24 +1,24 @@
 import 'dart:ui';
 import '../models/unit_model.dart';
-import '../config.dart';
+import '../constants/game_config.dart';
 
 /// Centralized game rules file that handles all game logic
 class GameRules {
   // Track units remaining for each team
   static int _blueUnitsRemaining = kTotalUnitsPerTeam;
   static int _redUnitsRemaining = kTotalUnitsPerTeam;
-  
+
   // Reset game state
   static void resetGame() {
     _blueUnitsRemaining = kTotalUnitsPerTeam;
     _redUnitsRemaining = kTotalUnitsPerTeam;
   }
-  
+
   // Get units remaining for a team
   static int getUnitsRemaining(Team team) {
     return team == Team.blue ? _blueUnitsRemaining : _redUnitsRemaining;
   }
-  
+
   // Decrement units remaining when a unit is killed
   static void decrementUnitsRemaining(Team team) {
     if (team == Team.blue) {
@@ -27,38 +27,41 @@ class GameRules {
       if (_redUnitsRemaining > 0) _redUnitsRemaining--;
     }
   }
-  
+
   // Check if a team can spawn more units
   static bool canSpawnMoreUnits(Team team) {
     return getUnitsRemaining(team) > 0;
   }
-  
+
   // Check if a team can spawn a specific unit type
-  static bool canSpawnUnitType(Team team, UnitType type, List<UnitModel> units) {
+  static bool canSpawnUnitType(
+      Team team, UnitType type, List<UnitModel> units) {
     // Always check total units first
     if (!canSpawnMoreUnits(team)) return false;
-    
+
     // Captain is limited to 1 per team
     if (type == UnitType.captain) {
       return !hasCaptain(team, units);
     }
-    
+
     // Other unit types are only limited by total units
     return true;
   }
-  
+
   // Check if a team already has a captain
   static bool hasCaptain(Team team, List<UnitModel> units) {
-    return units.any((u) => u.team == team && u.type == UnitType.captain && u.health > 0);
+    return units.any(
+        (u) => u.team == team && u.type == UnitType.captain && u.health > 0);
   }
-  
+
   /// Process all game rules and return the current game state
   static GameState processRules(List<UnitModel> units, {Offset? apex}) {
     final gameState = GameState();
 
     // Rule 1: Remove dead units
     final aliveUnits = units.where((unit) => unit.health > 0).toList();
-    gameState.unitsToRemove = units.where((unit) => unit.health <= 0).map((u) => u.id).toList();
+    gameState.unitsToRemove =
+        units.where((unit) => unit.health <= 0).map((u) => u.id).toList();
 
     // Rule 2: Check victory conditions
     gameState.victoryState = checkVictoryConditions(aliveUnits, units);
@@ -70,7 +73,7 @@ class GameRules {
     // Rule 4: Calculate team health percentages
     gameState.blueHealthPercent = calculateTeamHealth(aliveUnits, Team.blue);
     gameState.redHealthPercent = calculateTeamHealth(aliveUnits, Team.red);
-    
+
     // Rule 5: Set remaining units
     gameState.blueUnitsRemaining = _blueUnitsRemaining;
     gameState.redUnitsRemaining = _redUnitsRemaining;
@@ -79,7 +82,8 @@ class GameRules {
   }
 
   /// Check victory conditions
-  static VictoryState checkVictoryConditions(List<UnitModel> aliveUnits, List<UnitModel> allUnits) {
+  static VictoryState checkVictoryConditions(
+      List<UnitModel> aliveUnits, List<UnitModel> allUnits) {
     // Don't check victory until both teams have units
     final blueTotal = allUnits.where((u) => u.team == Team.blue).length;
     final redTotal = allUnits.where((u) => u.team == Team.red).length;
@@ -104,7 +108,10 @@ class GameRules {
 
     // Victory condition 2: Total elimination
     // Only if both teams had units AND no more units can be spawned AND one team has no living units
-    if (blueUnits.isEmpty && redUnits.isNotEmpty && _blueUnitsRemaining <= 0 && blueTotal > 0) {
+    if (blueUnits.isEmpty &&
+        redUnits.isNotEmpty &&
+        _blueUnitsRemaining <= 0 &&
+        blueTotal > 0) {
       return VictoryState(
         hasWinner: true,
         winner: Team.red,
@@ -112,7 +119,10 @@ class GameRules {
       );
     }
 
-    if (redUnits.isEmpty && blueUnits.isNotEmpty && _redUnitsRemaining <= 0 && redTotal > 0) {
+    if (redUnits.isEmpty &&
+        blueUnits.isNotEmpty &&
+        _redUnitsRemaining <= 0 &&
+        redTotal > 0) {
       return VictoryState(
         hasWinner: true,
         winner: Team.blue,
@@ -121,10 +131,16 @@ class GameRules {
     }
 
     // Victory condition 3: Captain elimination - only if both teams had captains
-    final blueCaptains = blueUnits.where((u) => u.type == UnitType.captain).toList();
-    final redCaptains = redUnits.where((u) => u.type == UnitType.captain).toList();
-    final blueCaptainsTotal = allUnits.where((u) => u.team == Team.blue && u.type == UnitType.captain).length;
-    final redCaptainsTotal = allUnits.where((u) => u.team == Team.red && u.type == UnitType.captain).length;
+    final blueCaptains =
+        blueUnits.where((u) => u.type == UnitType.captain).toList();
+    final redCaptains =
+        redUnits.where((u) => u.type == UnitType.captain).toList();
+    final blueCaptainsTotal = allUnits
+        .where((u) => u.team == Team.blue && u.type == UnitType.captain)
+        .length;
+    final redCaptainsTotal = allUnits
+        .where((u) => u.team == Team.red && u.type == UnitType.captain)
+        .length;
 
     // Only check captain elimination if both teams had captains
     if (blueCaptainsTotal > 0 && redCaptainsTotal > 0) {

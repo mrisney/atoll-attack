@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/screen_util.dart';
 import '../utils/responsive_size_util.dart';
 import 'dart:math' as math;
 

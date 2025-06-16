@@ -7,7 +7,7 @@ import 'package:a_star/a_star.dart';
 import '../rules/combat_rules.dart';
 
 // Import flag raising constants from config
-import '../config.dart';
+import '../constants/game_config.dart';
 
 enum UnitType {
   captain,
@@ -53,7 +53,7 @@ class UnitModel {
   double maxHealth;
   bool hasPlantedFlag = false;
   Team team;
-  
+
   // Combat targeting
   UnitModel? targetEnemy;
   double attackCooldown = 0.0;
@@ -268,27 +268,30 @@ class UnitModel {
     if (attackCooldown > 0) {
       attackCooldown -= dt;
     }
-    
+
     // Combat logic - check for enemies in range, but only if not being redirected by player
     if (!forceRedirect && state != UnitState.raisingFlag) {
       // If we have a specific target enemy, prioritize it
       if (targetEnemy != null && targetEnemy!.health > 0) {
         double distance = position.distanceTo(targetEnemy!.position);
-        
+
         // If target is in range, attack it
-        if (distance <= effectiveAttackRange && attackPower > 0 && attackCooldown <= 0) {
+        if (distance <= effectiveAttackRange &&
+            attackPower > 0 &&
+            attackCooldown <= 0) {
           // Attack enemy
           state = UnitState.attacking;
           targetEnemy!.health -= attackPower * dt * 0.5;
-          
+
           // Set attack cooldown (different for each unit type)
           attackCooldown = type == UnitType.archer ? 0.8 : 0.5;
-          
+
           // Enemy counterattacks if in range
-          if (targetEnemy!.attackRange >= distance && targetEnemy!.attackPower > 0) {
+          if (targetEnemy!.attackRange >= distance &&
+              targetEnemy!.attackPower > 0) {
             health -= targetEnemy!.attackPower * dt * 0.5;
           }
-          
+
           // Slow down when attacking
           velocity *= 0.8;
         }
@@ -302,12 +305,13 @@ class UnitModel {
       }
       // Otherwise, look for any enemies in range
       else {
-        final enemies = units.where((u) => u.team != team && u.health > 0).toList();
-        
+        final enemies =
+            units.where((u) => u.team != team && u.health > 0).toList();
+
         // Find closest enemy in range
         UnitModel? closestEnemy;
         double closestDistance = double.infinity;
-        
+
         for (final enemy in enemies) {
           double distance = position.distanceTo(enemy.position);
           if (distance <= effectiveAttackRange && distance < closestDistance) {
@@ -315,20 +319,21 @@ class UnitModel {
             closestDistance = distance;
           }
         }
-        
+
         // Attack closest enemy if found and cooldown is ready
         if (closestEnemy != null && attackPower > 0 && attackCooldown <= 0) {
           state = UnitState.attacking;
           closestEnemy.health -= attackPower * dt * 0.5;
-          
+
           // Set attack cooldown
           attackCooldown = type == UnitType.archer ? 0.8 : 0.5;
-          
+
           // Enemy counterattacks if in range
-          if (closestEnemy.attackRange >= closestDistance && closestEnemy.attackPower > 0) {
+          if (closestEnemy.attackRange >= closestDistance &&
+              closestEnemy.attackPower > 0) {
             health -= closestEnemy.attackPower * dt * 0.5;
           }
-          
+
           // Slow down when attacking
           velocity *= 0.8;
         }
@@ -336,7 +341,7 @@ class UnitModel {
     } else if (forceRedirect) {
       // If being redirected, prioritize movement
       state = isSelected ? UnitState.selected : UnitState.moving;
-      
+
       // Reset the force redirect flag after a short time to allow normal behavior to resume
       forceRedirect = false;
     }

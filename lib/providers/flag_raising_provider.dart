@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import '../models/unit_model.dart';
 import '../game/island_game.dart';
-import '../config.dart';
+import '../constants/game_config.dart';
 
 /// Provider to track flag raising progress for UI feedback
 class FlagRaisingNotifier extends StateNotifier<FlagRaisingState> {
   FlagRaisingNotifier() : super(FlagRaisingState());
 
-  void updateFlagRaisingStatus(UnitModel? captain, bool isAtApex, double progress) {
+  void updateFlagRaisingStatus(
+      UnitModel? captain, bool isAtApex, double progress) {
     if (captain == null) {
       state = FlagRaisingState();
       return;
@@ -44,19 +46,22 @@ class FlagRaisingState {
   });
 
   String get teamName => team == Team.blue ? 'Blue' : 'Red';
-  Color get teamColor => team == Team.blue ? const Color(0xFF2196F3) : const Color(0xFFF44336);
-  
+  Color get teamColor =>
+      team == Team.blue ? const Color(0xFF2196F3) : const Color(0xFFF44336);
+
   /// Get formatted progress percentage
   String get progressText => '${(flagRaiseProgress * 100).round()}%';
-  
+
   /// Get time remaining in seconds
   String get timeRemaining {
-    final secondsRemaining = (kFlagRaiseDuration * (1.0 - flagRaiseProgress)).round();
+    final secondsRemaining =
+        (kFlagRaiseDuration * (1.0 - flagRaiseProgress)).round();
     return '$secondsRemaining sec';
   }
 }
 
 /// Provider for flag raising state
-final flagRaisingProvider = StateNotifierProvider<FlagRaisingNotifier, FlagRaisingState>((ref) {
+final flagRaisingProvider =
+    StateNotifierProvider<FlagRaisingNotifier, FlagRaisingState>((ref) {
   return FlagRaisingNotifier();
 });

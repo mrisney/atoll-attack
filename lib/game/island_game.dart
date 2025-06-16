@@ -10,7 +10,7 @@ import '../models/unit_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
 import '../managers/unit_selection_manager.dart';
-import '../config.dart';
+import '../constants/game_config.dart';
 import 'dart:ui';
 import '../utils/responsive_size_util.dart';
 
@@ -74,7 +74,7 @@ class IslandGame extends FlameGame
   double _markerPulseScale = 1.0;
   double _markerTimer = 0.0;
   DateTime _lastTapTime = DateTime.now();
-  
+
   // Unit selection manager
   late UnitSelectionManager _unitSelectionManager;
 
@@ -138,7 +138,7 @@ class IslandGame extends FlameGame
     GameRules.resetGame();
     _blueUnitsRemaining = kTotalUnitsPerTeam;
     _redUnitsRemaining = kTotalUnitsPerTeam;
-    
+
     _isLoaded = true;
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
   }
@@ -268,7 +268,8 @@ class IslandGame extends FlameGame
 
       if (distance > 15) {
         // Drag selection using selection manager
-        _unitSelectionManager.selectUnitsInBox(_selectionStart!, _selectionEnd!);
+        _unitSelectionManager.selectUnitsInBox(
+            _selectionStart!, _selectionEnd!);
         _notifyUIUpdate();
       } else {
         // Single click movement
@@ -367,7 +368,7 @@ class IslandGame extends FlameGame
       }
     });
   }
-  
+
   /// Public method to create destination marker (for UnitSelectionManager)
   void createDestinationMarker(Vector2 worldPosition) {
     _createDestinationMarker(worldPosition);
@@ -556,12 +557,12 @@ class IslandGame extends FlameGame
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
           _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
-          
+
           // If unit is selected, clear it from selection
           if (unitToRemove.model.isSelected) {
             _unitSelectionManager.clearSelection();
           }
-          
+
           unitToRemove.playDeathAnimation();
           unitsRemoved = true;
 
@@ -620,7 +621,7 @@ class IslandGame extends FlameGame
       final screenPos = worldToScreenPosition(_destinationMarker!);
       _drawDestinationMarker(canvas, screenPos);
     }
-    
+
     // Render attack range indicators
     _unitSelectionManager.renderAttackRange(canvas);
   }
@@ -795,7 +796,9 @@ class IslandGame extends FlameGame
 
   List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
   UnitComponent? get selectedUnit =>
-      _unitSelectionManager.selectedUnits.isNotEmpty ? _unitSelectionManager.selectedUnits.first : null;
+      _unitSelectionManager.selectedUnits.isNotEmpty
+          ? _unitSelectionManager.selectedUnits.first
+          : null;
 
   double get blueHealthPercent {
     final blueUnits = _units

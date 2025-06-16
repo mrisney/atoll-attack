@@ -1,7 +1,7 @@
 import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/island_settings.dart';
-import '../config.dart'; // Import your config file
+import '../constants/game_config.dart'; // Import your config file
 
 class IslandSettingsNotifier extends StateNotifier<IslandSettings> {
   IslandSettingsNotifier()
