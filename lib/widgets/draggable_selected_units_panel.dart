@@ -68,7 +68,7 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
           color: Colors.black.withOpacity(0.6),
           child: Container(
             constraints: BoxConstraints(
-              maxWidth: screenSize.width * 0.8,
+              maxWidth: screenSize.width * 0.6,
               maxHeight: _isExpanded ? maxHeight : double.infinity,
             ),
             child: Padding(
@@ -164,7 +164,7 @@ class _DraggableSelectedUnitsPanelState extends State<DraggableSelectedUnitsPane
       constraints: BoxConstraints(
         maxHeight: maxHeight - 60, // Account for header and padding
       ),
-      width: MediaQuery.of(context).size.width * 0.7,
+      width: MediaQuery.of(context).size.width * 0.5,
       child: Scrollbar(
         controller: _scrollController,
         thumbVisibility: true,

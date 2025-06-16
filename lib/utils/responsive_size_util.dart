@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'package:flame/components.dart';
+import 'package:flame/components.dart' show Vector2;
 
 /// Utility class for responsive sizing throughout the game
 class ResponsiveSizeUtil {
