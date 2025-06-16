@@ -125,14 +125,14 @@ class IslandGame extends FlameGame
     required double bias,
     required int seed,
     required double islandRadius,
-    required bool showPerimeter,
+    required bool showPerimeter, // Parameter kept for backward compatibility
   }) {
     this.amplitude = amplitude;
     this.wavelength = wavelength;
     this.bias = bias;
     this.seed = seed;
     this.islandRadius = islandRadius;
-    this.showPerimeter = showPerimeter;
+    this.showPerimeter = false; // Always set to false regardless of parameter
     if (_isLoaded && _island.isMounted) {
       _island.updateParams(
         amplitude: amplitude,
@@ -141,7 +141,7 @@ class IslandGame extends FlameGame
         seed: seed,
         islandRadius: islandRadius,
       );
-      _island.showPerimeter = showPerimeter;
+      _island.showPerimeter = false; // Always set to false
     }
   }
 
@@ -163,7 +163,7 @@ class IslandGame extends FlameGame
         seed: seed,
         islandRadius: islandRadius,
       );
-      _island.showPerimeter = showPerimeter;
+      _island.showPerimeter = false; // Always set to false
     }
   }
 
@@ -171,7 +171,7 @@ class IslandGame extends FlameGame
   void update(double dt) {
     super.update(dt);
     if (_isLoaded && _island.isMounted) {
-      _island.showPerimeter = showPerimeter;
+      _island.showPerimeter = false; // Always keep perimeter off
     }
 
     processGameRules();
@@ -214,12 +214,9 @@ class IslandGame extends FlameGame
     }
   }
   
-  // Toggle topographic map visibility without affecting units
+  // Toggle topographic map visibility - deprecated
   void toggleApexMarker(bool show) {
-    showPerimeter = show;
-    if (_isLoaded && _island.isMounted) {
-      _island.showPerimeter = show;
-    }
+    // No-op - feature deprecated
   }
 
   @override

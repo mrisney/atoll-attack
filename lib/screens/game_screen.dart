@@ -208,10 +208,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               selectedUnit: null, // We're not using this anymore
               blueUnitsRemaining: stats['blueRemaining'] ?? 0,
               redUnitsRemaining: stats['redRemaining'] ?? 0,
-              showPerimeter: showPerimeter,
-              onPerimeterToggle: (value) {
-                ref.read(showPerimeterProvider.notifier).state = value;
-              },
             ),
             const SizedBox(height: 8),
             // Add the selected units panel with toggle button
@@ -281,10 +277,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 selectedUnit: null, // We're not using this anymore
                 blueUnitsRemaining: stats['blueRemaining'] ?? 0,
                 redUnitsRemaining: stats['redRemaining'] ?? 0,
-                showPerimeter: showPerimeter,
-                onPerimeterToggle: (value) {
-                  ref.read(showPerimeterProvider.notifier).state = value;
-                },
               ),
               const SizedBox(height: 8),
               // Zoom controls

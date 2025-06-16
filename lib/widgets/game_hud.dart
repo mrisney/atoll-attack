@@ -11,8 +11,7 @@ class GameHUD extends StatelessWidget {
   final UnitModel? selectedUnit;
   final int blueUnitsRemaining;
   final int redUnitsRemaining;
-  final bool showPerimeter;
-  final ValueChanged<bool>? onPerimeterToggle;
+
 
   const GameHUD({
     Key? key,
@@ -25,8 +24,6 @@ class GameHUD extends StatelessWidget {
     this.selectedUnit,
     required this.blueUnitsRemaining,
     required this.redUnitsRemaining,
-    required this.showPerimeter,
-    this.onPerimeterToggle,
   }) : super(key: key);
 
   @override
@@ -65,53 +62,7 @@ class GameHUD extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Perimeter toggle moved here
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.terrain,
-                                color: Colors.white.withOpacity(0.7),
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Topographic',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.7),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                height: 16,
-                                child: Switch(
-                                  value: showPerimeter,
-                                  onChanged: onPerimeterToggle,
-                                  activeColor: Colors.purple.shade300,
-                                  inactiveThumbColor: Colors.grey.shade400,
-                                  inactiveTrackColor:
-                                      Colors.grey.withOpacity(0.2),
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+
                         IconButton(
                           icon: const Icon(Icons.close,
                               color: Colors.white70, size: 20),
