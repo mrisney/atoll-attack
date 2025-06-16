@@ -32,10 +32,16 @@ class IslandGame extends FlameGame
 
   // Zoom and camera properties
   double zoomLevel = 1.0;
-  final double minZoom = 0.5;
-  final double maxZoom = 2.0;
+  final double minZoom = 0.3;
+  final double maxZoom = 3.0;
   Vector2? _lastPanPosition;
   late double startZoom;
+
+  // Enhanced gesture handling
+  bool _isScaling = false;
+  bool _isPanning = false;
+  Vector2? _scaleStartFocalPoint;
+  Vector2? _panStartCameraPosition;
 
   // Game components
   late IslandComponent _island;
@@ -288,23 +294,77 @@ class IslandGame extends FlameGame
   @override
   void onScaleStart(ScaleStartInfo info) {
     startZoom = zoomLevel;
+    _isScaling = false;
+    _isPanning = false;
+    _scaleStartFocalPoint = info.eventPosition.global.clone();
+    _panStartCameraPosition = camera.viewfinder.position.clone();
     _lastPanPosition = info.eventPosition.global.clone();
+
+    // Cancel any ongoing drag selection when starting scale/pan
+    if (_isDragging) {
+      _isDragging = false;
+      _selectionStart = null;
+      _selectionEnd = null;
+    }
   }
 
   @override
   void onScaleUpdate(ScaleUpdateInfo info) {
     final currentScale = info.scale.global;
-    if (!currentScale.isIdentity()) {
-      // Handle zoom
-      zoomLevel = (startZoom * currentScale.y).clamp(minZoom, maxZoom);
-    } else if (!_isDragging && _lastPanPosition != null) {
-      // Handle pan
-      final currentPosition = info.eventPosition.global;
+    final currentPosition = info.eventPosition.global;
+
+    // Determine if this is a zoom gesture (scale change) or pan gesture (position change)
+    final isZooming = !currentScale.isIdentity() &&
+        (currentScale.x != 1.0 || currentScale.y != 1.0);
+
+    if (isZooming) {
+      // Handle pinch-to-zoom
+      _isScaling = true;
+      _isPanning = false;
+
+      // Calculate new zoom level
+      final newZoomLevel = (startZoom * currentScale.y).clamp(minZoom, maxZoom);
+
+      // Zoom towards the focal point
+      if (_scaleStartFocalPoint != null) {
+        final focalPoint = _scaleStartFocalPoint!;
+
+        // Convert focal point to world coordinates at current zoom
+        final worldFocalPoint = Vector2(
+          focalPoint.x / zoomLevel + camera.viewfinder.position.x,
+          focalPoint.y / zoomLevel + camera.viewfinder.position.y,
+        );
+
+        // Update zoom level
+        zoomLevel = newZoomLevel;
+
+        // Adjust camera position to keep focal point in the same screen position
+        final newCameraX = worldFocalPoint.x - focalPoint.x / zoomLevel;
+        final newCameraY = worldFocalPoint.y - focalPoint.y / zoomLevel;
+        camera.viewfinder.position = Vector2(newCameraX, newCameraY);
+      } else {
+        zoomLevel = newZoomLevel;
+      }
+    } else if (!_isScaling && _lastPanPosition != null) {
+      // Handle pan (only if not currently scaling)
+      _isPanning = true;
+
       final delta = currentPosition - _lastPanPosition!;
       final scaledDelta = delta / zoomLevel;
+
+      // Apply pan with smooth movement
       camera.viewfinder.position += Vector2(-scaledDelta.x, -scaledDelta.y);
       _lastPanPosition = currentPosition.clone();
     }
+  }
+
+  @override
+  void onScaleEnd(ScaleEndInfo info) {
+    _isScaling = false;
+    _isPanning = false;
+    _scaleStartFocalPoint = null;
+    _panStartCameraPosition = null;
+    _lastPanPosition = null;
   }
 
   @override
@@ -414,6 +474,37 @@ class IslandGame extends FlameGame
   void resetZoom() {
     zoomLevel = 1.0;
     camera.viewfinder.position = Vector2.zero();
+  }
+
+  // =============================================================================
+  // PAN CONTROLS
+  // =============================================================================
+
+  /// Pan the camera in a specific direction
+  void panCamera(Vector2 direction) {
+    const panSpeed = 50.0;
+    final scaledDirection = direction.normalized() * panSpeed / zoomLevel;
+    camera.viewfinder.position += scaledDirection;
+  }
+
+  /// Pan camera up
+  void panUp() {
+    panCamera(Vector2(0, -1));
+  }
+
+  /// Pan camera down
+  void panDown() {
+    panCamera(Vector2(0, 1));
+  }
+
+  /// Pan camera left
+  void panLeft() {
+    panCamera(Vector2(-1, 0));
+  }
+
+  /// Pan camera right
+  void panRight() {
+    panCamera(Vector2(1, 0));
   }
 
   // =============================================================================

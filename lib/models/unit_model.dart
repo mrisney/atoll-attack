@@ -1,10 +1,7 @@
-import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 import 'package:flutter/material.dart';
-import 'package:a_star/a_star.dart';
-import '../rules/combat_rules.dart';
 
 // Import flag raising constants from config
 import '../constants/game_config.dart';

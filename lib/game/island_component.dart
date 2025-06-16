@@ -1,10 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
-import 'package:fast_noise/fast_noise.dart' as fn;
 import '../models/island_model.dart';
+import '../models/terrain_rules.dart';
 import '../constants/game_config.dart';
 
 /// Helper class for shader coordinate extraction (unchanged from your working version)
@@ -135,8 +134,9 @@ class ShaderCoordinateExtractor {
         ? smoothingLevel + kContourSmoothingLevel
         : smoothingLevel;
 
-    if (coordinates.length < 5 || effectiveSmoothingLevel <= 0)
+    if (coordinates.length < 5 || effectiveSmoothingLevel <= 0) {
       return coordinates;
+    }
 
     List<Offset> result = coordinates;
     for (int pass = 0; pass < effectiveSmoothingLevel; pass++) {
@@ -180,7 +180,6 @@ class IslandComponent extends PositionComponent {
   ui.FragmentShader? shader;
   bool shaderLoaded = false;
   ShaderCoordinateExtractor? _coordinateExtractor;
-  bool _perimeterDirty = true;
   Map<String, List<Offset>> _shaderContours = {};
 
   IslandComponent({
@@ -201,7 +200,6 @@ class IslandComponent extends PositionComponent {
   Future<void> onLoad() async {
     await super.onLoad();
     await _loadShader();
-    _perimeterDirty = true;
     await _extractShaderContours();
     _buildIslandModel();
   }
@@ -229,15 +227,14 @@ class IslandComponent extends PositionComponent {
     required int seed,
     required double islandRadius,
   }) {
-    this.amplitude = amplitude;
-    this.wavelength = wavelength;
-    this.bias = bias;
-    this.seed = seed;
-    this.islandRadius = islandRadius;
-    this.radius = gameSize.x * 0.3 * islandRadius;
-    this.size = gameSize;
-    this.position = gameSize / 2;
-    _perimeterDirty = true;
+    amplitude = amplitude;
+    wavelength = wavelength;
+    bias = bias;
+    seed = seed;
+    islandRadius = islandRadius;
+    radius = gameSize.x * 0.3 * islandRadius;
+    size = gameSize;
+    position = gameSize / 2;
     _extractShaderContours().then((_) => _buildIslandModel());
   }
 
@@ -362,19 +359,8 @@ class IslandComponent extends PositionComponent {
     final devicePixelRatio = ui.window.devicePixelRatio;
     final scaleFactor = devicePixelRatio > 2.5 ? 1.0 / devicePixelRatio : 1.0;
 
-    final contourColors = {
-      'coastline': Colors.blue.shade800,
-      'shallow': Colors.green.shade300,
-      'midland': Colors.orange.shade300,
-      'highland': Colors.brown.shade300,
-    };
-
-    final elevationValues = {
-      'coastline': 0,
-      'shallow': 100,
-      'midland': 300,
-      'highland': 500,
-    };
+    // Get terrain rules for consistent configuration
+    final terrainRules = _model?.rules ?? const TerrainRules();
 
     // Draw contours from highest to lowest for proper layering
     final sortedKeys = ['highland', 'midland', 'shallow', 'coastline'];
@@ -393,12 +379,12 @@ class IslandComponent extends PositionComponent {
 
       // Fill contours with semi-transparent color
       final fillPaint = Paint()
-        ..color = contourColors[key]!.withOpacity(0.2)
+        ..color = terrainRules.getContourColor(key).withOpacity(0.2)
         ..style = PaintingStyle.fill;
 
       final strokePaint = Paint()
-        ..color = contourColors[key]!
-        ..strokeWidth = key == 'coastline' ? 2.5 : 1.5
+        ..color = terrainRules.getContourColor(key)
+        ..strokeWidth = terrainRules.getStrokeWidth(key)
         ..style = PaintingStyle.stroke;
 
       final path = Path();
@@ -416,7 +402,7 @@ class IslandComponent extends PositionComponent {
 
       // Add elevation labels if enabled
       if (kShowElevationLabels && key != 'coastline') {
-        final elevation = elevationValues[key];
+        final elevation = terrainRules.elevationLabels[key];
         final textStyle = TextStyle(
           color: Colors.black87,
           fontSize: 10,
@@ -510,7 +496,6 @@ class IslandComponent extends PositionComponent {
 
   /// Force contour re-extraction and grid rebuild
   Future<void> refreshContours() async {
-    _perimeterDirty = true;
     await _extractShaderContours();
     _buildIslandModel();
   }

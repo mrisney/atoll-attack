@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flame/components.dart'; // for Vector2
 import 'package:fast_noise/fast_noise.dart' as fn;
 import 'terrain_rules.dart';
-import 'terrain_rules.dart';
 
 class GridCell {
   final int gridX;
@@ -50,8 +49,8 @@ class IslandGridModel {
     required this.grid,
     required this.apex,
     TerrainRules? rules,
-  }) : noise = fn.SimplexNoise(seed: seed, frequency: 1.0),
-       this.rules = rules ?? const TerrainRules();
+  })  : noise = fn.SimplexNoise(seed: seed, frequency: 1.0),
+        rules = rules ?? const TerrainRules();
 
   factory IslandGridModel.generate({
     required double amplitude,
@@ -145,29 +144,33 @@ class IslandGridModel {
 
   // Pure Dart versions of the elevation functions
   static double _getElevationAt(
-    Vector2 centered,
-    double amplitude,
-    double wavelength,
-    double bias,
-    int seed,
-    double islandRadius,
-    fn.SimplexNoise noise,
-    [TerrainRules? rules]
-  ) {
+      Vector2 centered,
+      double amplitude,
+      double wavelength,
+      double bias,
+      int seed,
+      double islandRadius,
+      fn.SimplexNoise noise,
+      [TerrainRules? rules]) {
     rules = rules ?? const TerrainRules();
     double dist = centered.length;
+
+    // Use terrain rules for noise generation parameters
+    final noiseParams = rules.getNoiseParameters();
+
     double fbm(Vector2 x) {
       double v = 0.0;
       double a = 0.5;
       Vector2 shift = Vector2(100, 100);
-      double rotSin = math.sin(0.5);
-      double rotCos = math.cos(0.5);
-      for (int i = 0; i < 5; ++i) {
+      double rotSin = math.sin(noiseParams['rotationAngle']);
+      double rotCos = math.cos(noiseParams['rotationAngle']);
+
+      for (int i = 0; i < noiseParams['layers']; ++i) {
         v += a * noise.getNoise2(x.x, x.y);
         double nx = rotCos * x.x + rotSin * x.y;
         double ny = -rotSin * x.x + rotCos * x.y;
-        x = Vector2(nx, ny) * 2.0 + shift;
-        a *= 0.5;
+        x = Vector2(nx, ny) * noiseParams['frequencyGain'] + shift;
+        a *= noiseParams['amplitudeDecay'];
       }
       return v;
     }
@@ -183,11 +186,12 @@ class IslandGridModel {
     double noiseValue = fbm(noiseCoord);
     noiseValue = (noiseValue + 1.0) * 0.5;
     noiseValue = noiseValue * amplitude + bias;
-    
+
     // Place a single prominent peak at a position determined by the seed
     Vector2 peakPosition = rules.generatePeakPosition(seed);
-    noiseValue += addPeak(centered, peakPosition, rules.peakRadius, rules.peakIntensity);
-    
+    noiseValue +=
+        addPeak(centered, peakPosition, rules.peakRadius, rules.peakIntensity);
+
     noiseValue = noiseValue.clamp(0.0, 1.0);
     double falloff = 1.0 - (dist / islandRadius);
     falloff = falloff.clamp(0.0, 1.0);
@@ -196,18 +200,17 @@ class IslandGridModel {
   }
 
   static int _getElevationLevel(
-    Vector2 centered,
-    double amplitude,
-    double wavelength,
-    double bias,
-    int seed,
-    double islandRadius,
-    fn.SimplexNoise noise,
-    [TerrainRules? rules]
-  ) {
+      Vector2 centered,
+      double amplitude,
+      double wavelength,
+      double bias,
+      int seed,
+      double islandRadius,
+      fn.SimplexNoise noise,
+      [TerrainRules? rules]) {
     rules = rules ?? const TerrainRules();
-    double e = _getElevationAt(
-        centered, amplitude, wavelength, bias, seed, islandRadius, noise, rules);
+    double e = _getElevationAt(centered, amplitude, wavelength, bias, seed,
+        islandRadius, noise, rules);
     return rules.getElevationBand(e);
   }
 
