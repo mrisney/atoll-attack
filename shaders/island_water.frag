@@ -12,6 +12,12 @@ uniform float u_island_radius;
 uniform float u_mode; // 0=normal render, 1=detection mode
 uniform float u_detection_threshold; // threshold for detection
 
+// New uniforms for camera transform:
+uniform float u_camera_x; // world x of visible area top-left
+uniform float u_camera_y; // world y of visible area top-left
+uniform float u_view_w;   // visible width in world units
+uniform float u_view_h;   // visible height in world units
+
 out vec4 fragColor;
 
 #define NUM_NOISE_OCTAVES 5
@@ -85,11 +91,22 @@ float getElevation(vec2 centered, float dist) {
 }
 
 void main() {
-    vec2 fragCoord = FlutterFragCoord();
+    // Camera-aware mapping: map visible fragment to world coordinate
     vec2 u_resolution = vec2(u_resolution_x, u_resolution_y);
 
+    vec2 fragCoord = FlutterFragCoord();
+
+    // Map this visible pixel to world pixel:
+    // If u_view_w == u_resolution_x, then world_x = fragCoord.x + u_camera_x (no zoom/pan)
+    // Otherwise, scale accordingly:
+    float world_x = u_camera_x + fragCoord.x * (u_resolution.x / u_view_w);
+    float world_y = u_camera_y + fragCoord.y * (u_resolution.y / u_view_h);
+
+    // Now "worldFragCoord" runs from (0,0) to (u_resolution_x, u_resolution_y) over the full world
+    vec2 worldFragCoord = vec2(world_x, world_y);
+
     float minRes = min(u_resolution.x, u_resolution.y);
-    vec2 centered = (fragCoord - 0.5 * u_resolution) / (0.5 * minRes);
+    vec2 centered = (worldFragCoord - 0.5 * u_resolution) / (0.5 * minRes);
 
     float dist = length(centered);
     float noiseValue = getElevation(centered, dist);
@@ -134,23 +151,17 @@ void main() {
     } else {
         // Detection mode - find edges at the specified threshold
         vec2 texel = vec2(1.0) / u_resolution;
-        
-        // Multi-sample edge detection for smoother results
         float center = noiseValue;
         float edgeStrength = 0.0;
         int samples = 0;
-        
-        // Sample in a 3x3 grid around current pixel
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue; // Skip center
-                
+                if (dx == 0 && dy == 0) continue;
                 vec2 offset = vec2(float(dx), float(dy));
-                vec2 samplePos = (fragCoord + offset - 0.5 * u_resolution) / (0.5 * minRes);
-                float sampleDist = length(samplePos);
-                float sampleValue = getElevation(samplePos, sampleDist);
-                
-                // Check for threshold crossing
+                vec2 sampleFragCoord = worldFragCoord + offset;
+                vec2 sampleCentered = (sampleFragCoord - 0.5 * u_resolution) / (0.5 * minRes);
+                float sampleDist = length(sampleCentered);
+                float sampleValue = getElevation(sampleCentered, sampleDist);
                 if ((center >= u_detection_threshold && sampleValue < u_detection_threshold) ||
                     (center < u_detection_threshold && sampleValue >= u_detection_threshold)) {
                     edgeStrength += 1.0;
@@ -158,20 +169,13 @@ void main() {
                 samples++;
             }
         }
-        
-        // Normalize edge strength
         edgeStrength /= float(samples);
-        
-        // Only output if edge strength is above threshold (reduces noise)
+
         if (edgeStrength > 0.2) {
-            // Encode coordinate data in color channels
-            float normalizedX = fragCoord.x / u_resolution.x;
-            float normalizedY = fragCoord.y / u_resolution.y;
-            
-            // Encode edge strength in alpha channel for potential future use
+            float normalizedX = worldFragCoord.x / u_resolution.x;
+            float normalizedY = worldFragCoord.y / u_resolution.y;
             fragColor = vec4(normalizedX, edgeStrength, normalizedY, 1.0);
         } else {
-            // No significant edge - output transparent black
             fragColor = vec4(0.0, 0.0, 0.0, 0.0);
         }
     }

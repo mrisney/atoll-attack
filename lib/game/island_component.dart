@@ -182,6 +182,14 @@ class IslandComponent extends PositionComponent {
   ShaderCoordinateExtractor? _coordinateExtractor;
   Map<String, List<Offset>> _shaderContours = {};
 
+  // ==== NEW: Camera and view uniforms ====
+  double cameraX = 0;
+  double cameraY = 0;
+  double viewW = 1;
+  double viewH = 1;
+  double resolutionX = 1;
+  double resolutionY = 1;
+
   IslandComponent({
     required this.amplitude,
     required this.wavelength,
@@ -194,6 +202,14 @@ class IslandComponent extends PositionComponent {
     anchor = Anchor.center;
     size = gameSize;
     position = gameSize / 2;
+    // Initialize resolution to match gameSize at startup
+    resolutionX = gameSize.x;
+    resolutionY = gameSize.y;
+    // Default camera to show full world
+    cameraX = 0;
+    cameraY = 0;
+    viewW = gameSize.x;
+    viewH = gameSize.y;
   }
 
   @override
@@ -227,14 +243,15 @@ class IslandComponent extends PositionComponent {
     required int seed,
     required double islandRadius,
   }) {
-    amplitude = amplitude;
-    wavelength = wavelength;
-    bias = bias;
-    seed = seed;
-    islandRadius = islandRadius;
+    this.amplitude = amplitude;
+    this.wavelength = wavelength;
+    this.bias = bias;
+    this.seed = seed;
+    this.islandRadius = islandRadius;
     radius = gameSize.x * 0.3 * islandRadius;
     size = gameSize;
     position = gameSize / 2;
+    // Optionally: updateResolution(gameSize.x, gameSize.y);
     _extractShaderContours().then((_) => _buildIslandModel());
   }
 
@@ -261,16 +278,13 @@ class IslandComponent extends PositionComponent {
       _renderFallback(canvas);
     }
 
-    // Draw perimeter and grid only if showPerimeter is true
     if (showPerimeter) {
       _drawPerimeter(canvas);
       _drawGridOnLand(canvas);
     }
 
-    // Always draw apex (highpoint) regardless of showPerimeter setting
     final apex = _model?.getApex();
     if (apex != null) {
-      // Draw apex with a more visible marker
       final outerPaint = Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
@@ -283,7 +297,6 @@ class IslandComponent extends PositionComponent {
       canvas.drawCircle(apex, 8, innerPaint);
       canvas.drawCircle(apex, 8, outerPaint);
 
-      // Add "APEX" label
       final textStyle = TextStyle(
         color: Colors.white,
         fontSize: 12,
@@ -313,20 +326,26 @@ class IslandComponent extends PositionComponent {
     }
   }
 
+  // ==== REVISED: Set all uniforms for the new island_water.frag ====
   void _renderShaderIsland(Canvas canvas) {
     shader!
       ..setFloat(0, amplitude)
       ..setFloat(1, wavelength)
       ..setFloat(2, bias)
       ..setFloat(3, seed.toDouble())
-      ..setFloat(4, gameSize.x)
-      ..setFloat(5, gameSize.y)
+      ..setFloat(4, resolutionX) // u_resolution_x
+      ..setFloat(5, resolutionY) // u_resolution_y
       ..setFloat(6, islandRadius)
-      ..setFloat(7, 0.0)
-      ..setFloat(8, 0.0);
+      ..setFloat(7, 0.0) // mode: normal render
+      ..setFloat(8, 0.0) // detection threshold
+      ..setFloat(9, cameraX) // u_camera_x
+      ..setFloat(10, cameraY) // u_camera_y
+      ..setFloat(11, viewW) // u_view_w
+      ..setFloat(12, viewH); // u_view_h
+
     final paint = Paint()..shader = shader;
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.x, size.y),
+      Rect.fromLTWH(0, 0, resolutionX, resolutionY),
       paint,
     );
   }
@@ -338,7 +357,7 @@ class IslandComponent extends PositionComponent {
 
   /// Draw grid points only on land (inside coastline)
   void _drawGridOnLand(Canvas canvas) {
-    // Skip drawing grid if disabled in config
+    // ... UNCHANGED ...
     if (_model == null || !kShowGrid) return;
 
     final Paint gridPaint = Paint()
@@ -353,31 +372,22 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  /// Draw contours (coastline, elevation bands) as a topographic map
   void _drawPerimeter(Canvas canvas) {
-    // Device-specific scaling factor to ensure contours render correctly on all devices
+    // ... UNCHANGED ...
     final devicePixelRatio = ui.window.devicePixelRatio;
     final scaleFactor = devicePixelRatio > 2.5 ? 1.0 / devicePixelRatio : 1.0;
-
-    // Get terrain rules for consistent configuration
     final terrainRules = _model?.rules ?? const TerrainRules();
-
-    // Draw contours from highest to lowest for proper layering
     final sortedKeys = ['highland', 'midland', 'shallow', 'coastline'];
 
     for (final key in sortedKeys) {
       final points = _shaderContours[key];
       if (points == null || points.length < 3) continue;
-
-      // Apply scaling to points if needed for high-DPI devices
       List<Offset> scaledPoints = points;
       if (scaleFactor != 1.0) {
         scaledPoints = points
             .map((p) => Offset(p.dx * scaleFactor, p.dy * scaleFactor))
             .toList();
       }
-
-      // Fill contours with semi-transparent color
       final fillPaint = Paint()
         ..color = terrainRules.getContourColor(key).withOpacity(0.2)
         ..style = PaintingStyle.fill;
@@ -395,12 +405,9 @@ class IslandComponent extends PositionComponent {
         }
         path.close();
       }
-
-      // Fill first, then stroke
       canvas.drawPath(path, fillPaint);
       canvas.drawPath(path, strokePaint);
 
-      // Add elevation labels if enabled
       if (kShowElevationLabels && key != 'coastline') {
         final elevation = terrainRules.elevationLabels[key];
         final textStyle = TextStyle(
@@ -408,8 +415,6 @@ class IslandComponent extends PositionComponent {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         );
-
-        // Add a few elevation markers along the contour
         final numLabels = key == 'highland' ? 1 : 2;
         final step = scaledPoints.length ~/ (numLabels + 1);
 
@@ -423,8 +428,6 @@ class IslandComponent extends PositionComponent {
               textDirection: TextDirection.ltr,
             );
             textPainter.layout();
-
-            // Draw with white background for readability
             final bgRect = Rect.fromCenter(
               center: position,
               width: textPainter.width + 6,
@@ -434,7 +437,6 @@ class IslandComponent extends PositionComponent {
               bgRect,
               Paint()..color = Colors.white.withOpacity(0.7),
             );
-
             textPainter.paint(
               canvas,
               Offset(
@@ -468,7 +470,25 @@ class IslandComponent extends PositionComponent {
     }
   }
 
-  // Public API methods that delegate to the model
+  // ==== NEW: Camera/viewport update API ====
+  void updateCameraRegion({
+    required double cameraX,
+    required double cameraY,
+    required double viewW,
+    required double viewH,
+  }) {
+    this.cameraX = cameraX;
+    this.cameraY = cameraY;
+    this.viewW = viewW;
+    this.viewH = viewH;
+  }
+
+  void updateResolution(double width, double height) {
+    resolutionX = width;
+    resolutionY = height;
+  }
+
+  // ==== UNCHANGED: Model APIs ====
   bool isOnLand(Vector2 worldPosition) {
     if (_model == null) return false;
     return _model!.isOnLand(Offset(worldPosition.x, worldPosition.y));
@@ -482,8 +502,6 @@ class IslandComponent extends PositionComponent {
 
   double getElevationAt(Vector2 worldPosition) {
     if (_model == null) return 0.0;
-
-    // Pass world coordinates directly to the model - it will handle the conversion
     return _model!.getElevationAt(Offset(worldPosition.x, worldPosition.y));
   }
 
@@ -494,18 +512,14 @@ class IslandComponent extends PositionComponent {
     return Vector2(cx, cy);
   }
 
-  /// Force contour re-extraction and grid rebuild
   Future<void> refreshContours() async {
     await _extractShaderContours();
     _buildIslandModel();
   }
 
-  // Getters that delegate to the model
   List<GridCell> getIslandGrid() => _model?.getGridCells() ?? [];
-  // Always return the highest point of the island as the apex
   Offset? getApexPosition() {
     if (_model == null) return null;
-    // The apex is the highest point on the island
     return _model!.getApex();
   }
 
