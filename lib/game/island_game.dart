@@ -35,14 +35,7 @@ class IslandGame extends FlameGame
   double zoomLevel = 1.0;
   final double minZoom = 0.3;
   final double maxZoom = 3.0;
-  Vector2? _lastPanPosition;
   late double startZoom;
-
-  // Enhanced gesture handling
-  bool _isScaling = false;
-  bool _isPanning = false;
-  Vector2? _scaleStartFocalPoint;
-  Vector2? _panStartCameraPosition;
 
   // Game components
   late IslandComponent _island;
