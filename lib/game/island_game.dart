@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'island_component.dart';
 import 'unit_component.dart';
+import 'ship_component.dart';
+import 'ship_model.dart';
 import '../models/unit_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
@@ -41,6 +43,7 @@ class IslandGame extends FlameGame
   late IslandComponent _island;
   bool _isLoaded = false;
   final List<UnitComponent> _units = [];
+  final List<ShipComponent> _ships = []; // NEW: Ship storage
   PathfindingService? _pathfindingService;
 
   // Game state
@@ -151,8 +154,52 @@ class IslandGame extends FlameGame
     _blueUnitsRemaining = kTotalUnitsPerTeam;
     _redUnitsRemaining = kTotalUnitsPerTeam;
 
+    // NEW: Spawn initial ships
+    await _spawnInitialShips();
+
     _isLoaded = true;
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
+  }
+
+  // NEW: Spawn ships at game start
+  Future<void> _spawnInitialShips() async {
+    // Wait for island to be ready
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final coastline = getCoastline();
+    if (coastline.isEmpty) {
+      debugPrint("No coastline found, using default ship spawn locations");
+      // Fallback positions
+      _spawnShip(Team.blue, Vector2(gameSize.x * 0.25, gameSize.y * 0.2));
+      _spawnShip(Team.red, Vector2(gameSize.x * 0.75, gameSize.y * 0.8));
+      return;
+    }
+
+    // Find north and south coastline points for ship spawning
+    final northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
+    final southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
+
+    // Spawn ships slightly offshore from north and south points
+    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 40);
+    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 40);
+
+    _spawnShip(Team.blue, blueShipPos);
+    _spawnShip(Team.red, redShipPos);
+  }
+
+  // NEW: Spawn a ship at specified position
+  void _spawnShip(Team team, Vector2 position) {
+    final shipModel = ShipModel(
+      id: 'ship_${team.name}_${DateTime.now().millisecondsSinceEpoch}',
+      team: team,
+      position: position,
+    );
+
+    final shipComponent = ShipComponent(model: shipModel);
+    add(shipComponent);
+    _ships.add(shipComponent);
+
+    debugPrint('Spawned ${team.name} turtle ship at $position');
   }
 
   @override
@@ -235,6 +282,14 @@ class IslandGame extends FlameGame
     }
     _lastTapTime = now;
 
+    // NEW: Check for ship taps first (ships are larger, should have priority)
+    final tappedShip = _findShipAtPosition(worldBeforeZoom);
+    if (tappedShip != null) {
+      _unitSelectionManager.handleShipTap(tappedShip);
+      _notifyUIUpdate();
+      return true;
+    }
+
     final tappedUnit = _findUnitAtPosition(worldBeforeZoom);
     if (tappedUnit != null) {
       _unitSelectionManager.handleUnitTap(tappedUnit);
@@ -292,6 +347,83 @@ class IslandGame extends FlameGame
     zoomLevel += info.scrollDelta.global.y.sign * -zoomPerScrollUnit;
     zoomLevel = zoomLevel.clamp(minZoom, maxZoom);
     clampCamera();
+  }
+
+  // =============================================================================
+  // SHIP INTERACTION
+  // =============================================================================
+
+  // NEW: Find ship at position
+  ShipComponent? _findShipAtPosition(Vector2 worldPosition) {
+    for (final ship in _ships) {
+      if (ship.model.isDestroyed) continue;
+      if (ship.containsPoint(worldPosition)) {
+        return ship;
+      }
+    }
+    return null;
+  }
+
+  // NEW: Deploy unit from ship at position
+  bool deployUnitFromShip(UnitType unitType, Team team) {
+    final teamShips =
+        _ships.where((s) => s.model.team == team && s.model.canDeployUnits());
+
+    for (final ship in teamShips) {
+      if (ship.model.canDeployUnits()) {
+        final deployedType = ship.deployUnit(unitType);
+        if (deployedType != null) {
+          final deployPos = ship.getDeploymentPosition();
+          if (deployPos != null) {
+            spawnUnitAtPosition(deployedType, team, deployPos);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // NEW: Spawn unit at specific position (for ship deployment)
+  void spawnUnitAtPosition(UnitType unitType, Team team, Vector2 position) {
+    final unitModel = UnitModel(
+      id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${team.name}_${unitType.name}',
+      type: unitType,
+      position: position,
+      team: team,
+      velocity: Vector2.zero(),
+      isOnLandCallback: isOnLand,
+      getTerrainSpeedCallback: getMovementSpeedMultiplier,
+    );
+
+    final unitComponent = UnitComponent(model: unitModel);
+    add(unitComponent);
+    _units.add(unitComponent);
+
+    // Update spawn counts
+    if (team == Team.blue) {
+      switch (unitType) {
+        case UnitType.captain:
+          _blueCaptainsSpawned++;
+        case UnitType.archer:
+          _blueArchersSpawned++;
+        case UnitType.swordsman:
+          _blueSwordsmenSpawned++;
+      }
+    } else {
+      switch (unitType) {
+        case UnitType.captain:
+          _redCaptainsSpawned++;
+        case UnitType.archer:
+          _redArchersSpawned++;
+        case UnitType.swordsman:
+          _redSwordsmenSpawned++;
+      }
+    }
+
+    debugPrint(
+        'Deployed ${unitType.name} for ${team.name} team at $position from ship');
+    _notifyUIUpdate();
   }
 
   // =============================================================================
@@ -412,12 +544,18 @@ class IslandGame extends FlameGame
   void panRight() => panCamera(Vector2(1, 0));
 
   // =============================================================================
-  // UNIT SPAWNING
+  // UNIT SPAWNING (Modified for ship integration)
   // =============================================================================
 
   void spawnSingleUnit(UnitType unitType, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
+    // NEW: Try to deploy from ship first
+    if (deployUnitFromShip(unitType, team)) {
+      return; // Successfully deployed from ship
+    }
+
+    // Fallback to old spawning method if no ships available
     final unitModels = _units.map((u) => u.model).toList();
 
     // Check if team can spawn more units
@@ -456,7 +594,7 @@ class IslandGame extends FlameGame
       return;
     }
 
-    // Find spawn location
+    // Find spawn location (fallback method)
     final apex = getIslandApex();
     if (apex == null) return;
 
@@ -476,48 +614,8 @@ class IslandGame extends FlameGame
     final spawnX = gameSize.x / 2 + (rng.nextDouble() * 60 - 30);
     final unitPosition = Vector2(spawnX, baseSpawnY);
 
-    // Create unit
-    final toApex = (Vector2(apex.dx, apex.dy) - unitPosition)..normalize();
-    final unitModel = UnitModel(
-      id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${team.name}_${unitType.name}',
-      type: unitType,
-      position: unitPosition,
-      team: team,
-      velocity: toApex.scaled(8.0),
-      isOnLandCallback: isOnLand,
-      getTerrainSpeedCallback: getMovementSpeedMultiplier,
-    );
-
-    unitModel.targetPosition = Vector2(apex.dx, apex.dy);
-
-    final unitComponent = UnitComponent(model: unitModel);
-    add(unitComponent);
-    _units.add(unitComponent);
-
-    // Update spawn counts
-    if (team == Team.blue) {
-      switch (unitType) {
-        case UnitType.captain:
-          _blueCaptainsSpawned++;
-        case UnitType.archer:
-          _blueArchersSpawned++;
-        case UnitType.swordsman:
-          _blueSwordsmenSpawned++;
-      }
-    } else {
-      switch (unitType) {
-        case UnitType.captain:
-          _redCaptainsSpawned++;
-        case UnitType.archer:
-          _redArchersSpawned++;
-        case UnitType.swordsman:
-          _redSwordsmenSpawned++;
-      }
-    }
-
-    debugPrint(
-        'Spawned ${unitType.name} for ${team.name} team at $unitPosition');
-    _notifyUIUpdate();
+    // Create unit using the position-based method
+    spawnUnitAtPosition(unitType, team, unitPosition);
   }
 
   // =============================================================================
@@ -739,6 +837,9 @@ class IslandGame extends FlameGame
 
   List<UnitComponent> getAllUnits() => _units;
 
+  // NEW: Ship access methods
+  List<ShipComponent> getAllShips() => _ships;
+
   PathfindingService? getPathfindingService() {
     if (_pathfindingService == null && _isLoaded && _island.isMounted) {
       final islandModel = _island.getIslandGridModel();
@@ -790,10 +891,24 @@ class IslandGame extends FlameGame
   int get redUnitsSpawned =>
       _redCaptainsSpawned + _redArchersSpawned + _redSwordsmenSpawned;
 
+  // NEW: Ship count getters
+  int get blueShipCount => _ships
+      .where((s) => s.model.team == Team.blue && !s.model.isDestroyed)
+      .length;
+  int get redShipCount => _ships
+      .where((s) => s.model.team == Team.red && !s.model.isDestroyed)
+      .length;
+
   List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
+  List<ShipComponent> get selectedShips =>
+      _unitSelectionManager.selectedShips; // NEW
   UnitComponent? get selectedUnit =>
       _unitSelectionManager.selectedUnits.isNotEmpty
           ? _unitSelectionManager.selectedUnits.first
+          : null;
+  ShipComponent? get selectedShip => // NEW
+      _unitSelectionManager.selectedShips.isNotEmpty
+          ? _unitSelectionManager.selectedShips.first
           : null;
 
   double get blueHealthPercent {
@@ -820,27 +935,76 @@ class IslandGame extends FlameGame
     return maxHealth > 0 ? totalHealth / maxHealth : 0.0;
   }
 
+  // NEW: Get selected objects info (units + ships)
   List<Map<String, dynamic>> getSelectedUnitsInfo() {
-    final List<Map<String, dynamic>> unitsInfo = [];
-    final selectedUnits = _unitSelectionManager.selectedUnits;
+    final List<Map<String, dynamic>> objectsInfo = [];
 
+    // Add selected units
+    final selectedUnits = _unitSelectionManager.selectedUnits;
     for (final unit in selectedUnits) {
       final healthPercent =
           (unit.model.health / unit.model.maxHealth * 100).toInt();
       final typeStr = unit.model.type.toString().split('.').last;
       final teamStr = unit.model.team.toString().split('.').last;
 
-      unitsInfo.add({
+      objectsInfo.add({
         'type': typeStr.toUpperCase(),
         'team': teamStr.toUpperCase(),
         'health': healthPercent,
         'hasFlag':
             unit.model.type == UnitType.captain && unit.model.hasPlantedFlag,
         'id': unit.model.id,
+        'objectType': 'UNIT',
+        'isTargeted': unit.model.isTargeted,
       });
     }
 
-    return unitsInfo;
+    // Add selected ships
+    final selectedShips = _unitSelectionManager.selectedShips;
+    for (final ship in selectedShips) {
+      final healthPercent = (ship.model.healthPercent * 100).toInt();
+      final teamStr = ship.model.team.toString().split('.').last;
+      final cargo = ship.model.getAvailableUnits();
+
+      objectsInfo.add({
+        'type': 'TURTLE SHIP',
+        'team': teamStr.toUpperCase(),
+        'health': healthPercent,
+        'status': ship.model.getStatusText(),
+        'cargo': cargo,
+        'canDeploy': ship.model.canDeployUnits(),
+        'id': ship.model.id,
+        'objectType': 'SHIP',
+      });
+    }
+
+    return objectsInfo;
+  }
+
+  // NEW: Get cargo info for ship deployment UI
+  Map<String, dynamic>? getSelectedShipCargo() {
+    final selectedShips = _unitSelectionManager.selectedShips;
+    if (selectedShips.isEmpty) return null;
+
+    final ship = selectedShips.first;
+    final cargo = ship.model.getAvailableUnits();
+
+    return {
+      'canDeploy': ship.model.canDeployUnits(),
+      'status': ship.model.getStatusText(),
+      'captains': cargo[UnitType.captain] ?? 0,
+      'archers': cargo[UnitType.archer] ?? 0,
+      'swordsmen': cargo[UnitType.swordsman] ?? 0,
+      'total': ship.model.cargoCount,
+    };
+  }
+
+  // NEW: Deploy unit from selected ship
+  bool deployUnitFromSelectedShip(UnitType unitType) {
+    final selectedShips = _unitSelectionManager.selectedShips;
+    if (selectedShips.isEmpty) return false;
+
+    return _unitSelectionManager.deployUnitFromShip(unitType);
   }
 
   // =============================================================================
