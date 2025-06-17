@@ -228,10 +228,19 @@ class IslandGame extends FlameGame
 
     debugPrint('Tap - Screen: $screenPos, World: $worldPos, Zoom: $zoomLevel');
 
-    // Handle double tap for zoom
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 300) {
-      zoomLevel = zoomLevel > 1.0 ? 1.0 : 1.75;
+      // Double-tap to zoom in or reset
+      final newZoom = zoomLevel > 1.0 ? 1.0 : 1.75;
+
+      // --- Center view on tap point ---
+      // Compute the offset so that tap point stays at the center after zoom
+      final tapWorldBefore = screenToWorldPosition(screenPos);
+      zoomLevel = newZoom;
+      final tapWorldAfter = screenToWorldPosition(screenPos);
+
+      camera.viewfinder.position += (tapWorldBefore - tapWorldAfter);
+
       _lastTapTime = DateTime.now().subtract(const Duration(milliseconds: 500));
       return true;
     }
@@ -291,80 +300,34 @@ class IslandGame extends FlameGame
     _selectionEnd = null;
   }
 
+  double _baseZoom = 1.0;
+  Vector2? _lastFocalScreen;
+  Vector2? _lastFocalWorld;
+
   @override
   void onScaleStart(ScaleStartInfo info) {
-    startZoom = zoomLevel;
-    _isScaling = false;
-    _isPanning = false;
-    _scaleStartFocalPoint = info.eventPosition.global.clone();
-    _panStartCameraPosition = camera.viewfinder.position.clone();
-    _lastPanPosition = info.eventPosition.global.clone();
-
-    // Cancel any ongoing drag selection when starting scale/pan
-    if (_isDragging) {
-      _isDragging = false;
-      _selectionStart = null;
-      _selectionEnd = null;
-    }
+    _baseZoom = zoomLevel;
+    _lastFocalScreen = info.eventPosition.global.clone();
+    _lastFocalWorld = screenToWorldPosition(_lastFocalScreen!);
   }
 
   @override
   void onScaleUpdate(ScaleUpdateInfo info) {
-    final currentScale = info.scale.global;
-    final currentPosition = info.eventPosition.global;
+    if (info.pointerCount < 2) return;
 
-    // Determine if this is a zoom gesture (scale change) or pan gesture (position change)
-    final isZooming = !currentScale.isIdentity() &&
-        (currentScale.x != 1.0 || currentScale.y != 1.0);
+    double newZoom = (_baseZoom * info.scale.global.y).clamp(minZoom, maxZoom);
 
-    if (isZooming) {
-      // Handle pinch-to-zoom
-      _isScaling = true;
-      _isPanning = false;
-
-      // Calculate new zoom level
-      final newZoomLevel = (startZoom * currentScale.y).clamp(minZoom, maxZoom);
-
-      // Zoom towards the focal point
-      if (_scaleStartFocalPoint != null) {
-        final focalPoint = _scaleStartFocalPoint!;
-
-        // Convert focal point to world coordinates at current zoom
-        final worldFocalPoint = Vector2(
-          focalPoint.x / zoomLevel + camera.viewfinder.position.x,
-          focalPoint.y / zoomLevel + camera.viewfinder.position.y,
-        );
-
-        // Update zoom level
-        zoomLevel = newZoomLevel;
-
-        // Adjust camera position to keep focal point in the same screen position
-        final newCameraX = worldFocalPoint.x - focalPoint.x / zoomLevel;
-        final newCameraY = worldFocalPoint.y - focalPoint.y / zoomLevel;
-        camera.viewfinder.position = Vector2(newCameraX, newCameraY);
-      } else {
-        zoomLevel = newZoomLevel;
-      }
-    } else if (!_isScaling && _lastPanPosition != null) {
-      // Handle pan (only if not currently scaling)
-      _isPanning = true;
-
-      final delta = currentPosition - _lastPanPosition!;
-      final scaledDelta = delta / zoomLevel;
-
-      // Apply pan with smooth movement
-      camera.viewfinder.position += Vector2(-scaledDelta.x, -scaledDelta.y);
-      _lastPanPosition = currentPosition.clone();
+    if (_lastFocalScreen != null && _lastFocalWorld != null) {
+      zoomLevel = newZoom;
+      final newWorldAtFocalScreen = screenToWorldPosition(_lastFocalScreen!);
+      camera.viewfinder.position += (_lastFocalWorld! - newWorldAtFocalScreen);
     }
   }
 
   @override
   void onScaleEnd(ScaleEndInfo info) {
-    _isScaling = false;
-    _isPanning = false;
-    _scaleStartFocalPoint = null;
-    _panStartCameraPosition = null;
-    _lastPanPosition = null;
+    _lastFocalScreen = null;
+    _lastFocalWorld = null;
   }
 
   @override
