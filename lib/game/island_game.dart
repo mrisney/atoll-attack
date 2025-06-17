@@ -31,6 +31,7 @@ class IslandGame extends FlameGame
   bool showPerimeter;
 
   // Zoom and camera properties
+  Vector2 cameraOrigin = Vector2.zero();
   double zoomLevel = 1.0;
   final double minZoom = 0.3;
   final double maxZoom = 3.0;
@@ -108,6 +109,18 @@ class IslandGame extends FlameGame
   }) {
     // Initialize unit selection manager in constructor to avoid late initialization errors
     _unitSelectionManager = UnitSelectionManager(this);
+  }
+
+  void clampCamera() {
+    final viewWidth = size.x / zoomLevel;
+    final viewHeight = size.y / zoomLevel;
+    final mapWidth = gameSize.x;
+    final mapHeight = gameSize.y;
+
+    cameraOrigin.x =
+        cameraOrigin.x.clamp(0, (mapWidth - viewWidth).clamp(0, mapWidth));
+    cameraOrigin.y =
+        cameraOrigin.y.clamp(0, (mapHeight - viewHeight).clamp(0, mapHeight));
   }
 
   @override
@@ -200,21 +213,12 @@ class IslandGame extends FlameGame
   // =============================================================================
 
   /// Convert screen tap position to game world coordinates
-  Vector2 screenToWorldPosition(Vector2 screenPosition) {
-    // Only apply zoom and camera transformations
-    // ScreenUtil scaling is handled at Flutter widget level
-    final worldX = screenPosition.x / zoomLevel + camera.viewfinder.position.x;
-    final worldY = screenPosition.y / zoomLevel + camera.viewfinder.position.y;
-    return Vector2(worldX, worldY);
+  Vector2 screenToWorldPosition(Vector2 screenPos) {
+    return cameraOrigin + screenPos / zoomLevel;
   }
 
-  /// Convert world position to screen coordinates
-  Vector2 worldToScreenPosition(Vector2 worldPosition) {
-    final screenX =
-        (worldPosition.x - camera.viewfinder.position.x) * zoomLevel;
-    final screenY =
-        (worldPosition.y - camera.viewfinder.position.y) * zoomLevel;
-    return Vector2(screenX, screenY);
+  Vector2 worldToScreenPosition(Vector2 worldPos) {
+    return (worldPos - cameraOrigin) * zoomLevel;
   }
 
   // =============================================================================
@@ -224,39 +228,28 @@ class IslandGame extends FlameGame
   @override
   bool onTapDown(TapDownInfo info) {
     final screenPos = info.eventPosition.global;
-    final worldPos = screenToWorldPosition(screenPos);
-
-    debugPrint('Tap - Screen: $screenPos, World: $worldPos, Zoom: $zoomLevel');
+    final worldBeforeZoom = screenToWorldPosition(screenPos);
 
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 300) {
-      // Double-tap to zoom in or reset
       final newZoom = zoomLevel > 1.0 ? 1.0 : 1.75;
-
-      // --- Center view on tap point ---
-      // Compute the offset so that tap point stays at the center after zoom
-      final tapWorldBefore = screenToWorldPosition(screenPos);
       zoomLevel = newZoom;
-      final tapWorldAfter = screenToWorldPosition(screenPos);
-
-      camera.viewfinder.position += (tapWorldBefore - tapWorldAfter);
-
+      cameraOrigin =
+          worldBeforeZoom - Vector2(size.x / 2, size.y / 2) / zoomLevel;
+      clampCamera();
       _lastTapTime = DateTime.now().subtract(const Duration(milliseconds: 500));
       return true;
     }
     _lastTapTime = now;
 
-    // Check for unit tap
-    final tappedUnit = _findUnitAtPosition(worldPos);
+    final tappedUnit = _findUnitAtPosition(worldBeforeZoom);
     if (tappedUnit != null) {
-      // Handle unit tap through selection manager
       _unitSelectionManager.handleUnitTap(tappedUnit);
       _notifyUIUpdate();
       return true;
     }
 
-    // Handle tap on empty space
-    _unitSelectionManager.handleEmptyTap(worldPos);
+    _unitSelectionManager.handleEmptyTap(worldBeforeZoom);
     _notifyUIUpdate();
 
     return true;
@@ -300,50 +293,19 @@ class IslandGame extends FlameGame
     _selectionEnd = null;
   }
 
-  double _baseZoom = 1.0;
-  Vector2? _lastFocalScreen;
-  Vector2? _lastFocalWorld;
-
-  @override
-  void onScaleStart(ScaleStartInfo info) {
-    _baseZoom = zoomLevel;
-    _lastFocalScreen = info.eventPosition.global.clone();
-    _lastFocalWorld = screenToWorldPosition(_lastFocalScreen!);
-  }
-
-  @override
-  void onScaleUpdate(ScaleUpdateInfo info) {
-    if (info.pointerCount < 2) return;
-
-    double newZoom = (_baseZoom * info.scale.global.y).clamp(minZoom, maxZoom);
-
-    if (_lastFocalScreen != null && _lastFocalWorld != null) {
-      zoomLevel = newZoom;
-      final newWorldAtFocalScreen = screenToWorldPosition(_lastFocalScreen!);
-      camera.viewfinder.position += (_lastFocalWorld! - newWorldAtFocalScreen);
-    }
-  }
-
-  @override
-  void onScaleEnd(ScaleEndInfo info) {
-    _lastFocalScreen = null;
-    _lastFocalWorld = null;
-  }
-
   @override
   void onScroll(PointerScrollInfo info) {
     const zoomPerScrollUnit = 0.05;
     zoomLevel += info.scrollDelta.global.y.sign * -zoomPerScrollUnit;
     zoomLevel = zoomLevel.clamp(minZoom, maxZoom);
+    clampCamera();
   }
 
   // =============================================================================
   // UNIT SELECTION AND MOVEMENT
   // =============================================================================
 
-  // This method is now deprecated - use UnitSelectionManager instead
   void _selectUnitsInBox(Vector2 screenStart, Vector2 screenEnd) {
-    // Delegate to the unit selection manager
     _unitSelectionManager.selectUnitsInBox(screenStart, screenEnd);
     _notifyUIUpdate();
   }
@@ -392,7 +354,6 @@ class IslandGame extends FlameGame
     });
   }
 
-  /// Public method to create destination marker (for UnitSelectionManager)
   void createDestinationMarker(Vector2 worldPosition) {
     _createDestinationMarker(worldPosition);
   }
@@ -403,7 +364,6 @@ class IslandGame extends FlameGame
       _markerPulseScale = 1.0 + 0.5 * math.sin(_markerTimer * 4);
       _markerOpacity -= dt * 0.05;
 
-      // Check if units are still moving to this destination
       bool unitsStillMoving = false;
       for (final unit in _units) {
         if (unit.model.targetPosition != null) {
@@ -428,47 +388,35 @@ class IslandGame extends FlameGame
 
   void zoomIn() {
     zoomLevel = (zoomLevel + 0.25).clamp(minZoom, maxZoom);
+    clampCamera();
   }
 
   void zoomOut() {
     zoomLevel = (zoomLevel - 0.25).clamp(minZoom, maxZoom);
+    clampCamera();
   }
 
   void resetZoom() {
     zoomLevel = 1.0;
-    camera.viewfinder.position = Vector2.zero();
+    cameraOrigin = Vector2.zero();
+    clampCamera();
   }
 
   // =============================================================================
   // PAN CONTROLS
   // =============================================================================
 
-  /// Pan the camera in a specific direction
   void panCamera(Vector2 direction) {
     const panSpeed = 50.0;
     final scaledDirection = direction.normalized() * panSpeed / zoomLevel;
-    camera.viewfinder.position += scaledDirection;
+    cameraOrigin += scaledDirection;
+    clampCamera();
   }
 
-  /// Pan camera up
-  void panUp() {
-    panCamera(Vector2(0, -1));
-  }
-
-  /// Pan camera down
-  void panDown() {
-    panCamera(Vector2(0, 1));
-  }
-
-  /// Pan camera left
-  void panLeft() {
-    panCamera(Vector2(-1, 0));
-  }
-
-  /// Pan camera right
-  void panRight() {
-    panCamera(Vector2(1, 0));
-  }
+  void panUp() => panCamera(Vector2(0, -1));
+  void panDown() => panCamera(Vector2(0, 1));
+  void panLeft() => panCamera(Vector2(-1, 0));
+  void panRight() => panCamera(Vector2(1, 0));
 
   // =============================================================================
   // UNIT SPAWNING
@@ -656,6 +604,7 @@ class IslandGame extends FlameGame
   void render(Canvas canvas) {
     // Apply zoom
     canvas.save();
+    canvas.translate(-cameraOrigin.x * zoomLevel, -cameraOrigin.y * zoomLevel);
     canvas.scale(zoomLevel);
     super.render(canvas);
     canvas.restore();
