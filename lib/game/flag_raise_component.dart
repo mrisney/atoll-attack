@@ -19,8 +19,11 @@ class FlagRaiseComponent extends PositionComponent {
 
   // Visual properties
   double _flagWaveOffset = 0.0;
-  double _progressBarWidth = 30.0;
-  double _progressBarHeight = 4.0;
+
+  // Enhanced progress bar properties (similar to health bar)
+  double _progressBarWidth = 40.0; // Wider like health bars
+  double _progressBarHeight = 6.0; // Taller like health bars
+  double _progressBarVerticalOffset = 12.0; // Position above unit
 
   // Flag pole and flag dimensions
   double _flagPoleHeight = 20.0;
@@ -32,7 +35,7 @@ class FlagRaiseComponent extends PositionComponent {
     required this.teamColor,
   }) : super(
           position: captain.position.clone(),
-          size: Vector2(40, 30), // Size to contain flag and progress bar
+          size: Vector2(50, 40), // Size to contain flag and progress bar
           anchor: Anchor.center,
         );
 
@@ -104,9 +107,9 @@ class FlagRaiseComponent extends PositionComponent {
       _drawFlag(canvas, flagCurrentHeight);
     }
 
-    // Draw progress bar (only while raising, not when fully raised)
+    // Draw enhanced progress bar (similar to health bars) - only while raising
     if (_isRaisingFlag && !_flagFullyRaised) {
-      _drawProgressBar(canvas);
+      _drawEnhancedProgressBar(canvas);
     }
 
     // Draw victory sparkles if flag is fully raised
@@ -201,59 +204,63 @@ class FlagRaiseComponent extends PositionComponent {
     }
   }
 
-  void _drawProgressBar(Canvas canvas) {
-    // Progress bar position (above the flag pole)
+  void _drawEnhancedProgressBar(Canvas canvas) {
+    // Progress bar position (similar to health bar positioning)
     double barX = size.x / 2 - _progressBarWidth / 2;
-    double barY = size.y / 2 + 5 - _flagPoleHeight - 8;
+    double barY = size.y / 2 - _progressBarVerticalOffset;
 
-    // Background bar
+    // Background bar (similar to health bar style)
     final Paint backgroundPaint = Paint()
       ..color = Colors.grey.withOpacity(0.7)
       ..style = PaintingStyle.fill;
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(barX, barY, _progressBarWidth, _progressBarHeight),
-        Radius.circular(_progressBarHeight / 2),
-      ),
+    canvas.drawRect(
+      Rect.fromLTWH(barX, barY, _progressBarWidth, _progressBarHeight),
       backgroundPaint,
     );
 
-    // Progress fill
+    // Progress fill with gradient effect
     final Paint progressPaint = Paint()
-      ..color = teamColor
+      ..color = teamColor.withOpacity(0.9)
       ..style = PaintingStyle.fill;
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(barX, barY, _progressBarWidth * _flagRaiseProgress,
-            _progressBarHeight),
-        Radius.circular(_progressBarHeight / 2),
-      ),
+    // Add a slight glow effect by drawing multiple layers
+    final Paint glowPaint = Paint()
+      ..color = teamColor.withOpacity(0.3)
+      ..style = PaintingStyle.fill;
+
+    // Draw glow (slightly larger)
+    canvas.drawRect(
+      Rect.fromLTWH(barX - 1, barY - 1,
+          (_progressBarWidth + 2) * _flagRaiseProgress, _progressBarHeight + 2),
+      glowPaint,
+    );
+
+    // Draw main progress
+    canvas.drawRect(
+      Rect.fromLTWH(barX, barY, _progressBarWidth * _flagRaiseProgress,
+          _progressBarHeight),
       progressPaint,
     );
 
-    // Progress bar border
+    // Progress bar border (similar to health bar)
     final Paint borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
+      ..color = Colors.white.withOpacity(0.9)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(barX, barY, _progressBarWidth, _progressBarHeight),
-        Radius.circular(_progressBarHeight / 2),
-      ),
+    canvas.drawRect(
+      Rect.fromLTWH(barX, barY, _progressBarWidth, _progressBarHeight),
       borderPaint,
     );
 
-    // Progress text
+    // Progress percentage text
     final String progressText = '${(_flagRaiseProgress * 100).round()}%';
     final TextSpan textSpan = TextSpan(
       text: progressText,
       style: TextStyle(
         color: Colors.white,
-        fontSize: 8,
+        fontSize: 10,
         fontWeight: FontWeight.bold,
         shadows: [
           Shadow(
@@ -271,11 +278,44 @@ class FlagRaiseComponent extends PositionComponent {
     );
     textPainter.layout();
 
+    // Position text above the progress bar
     textPainter.paint(
       canvas,
       Offset(
         barX + _progressBarWidth / 2 - textPainter.width / 2,
-        barY - textPainter.height - 2,
+        barY - textPainter.height - 4,
+      ),
+    );
+
+    // "RAISING FLAG" label
+    final TextSpan labelSpan = TextSpan(
+      text: 'RAISING FLAG',
+      style: TextStyle(
+        color: Colors.yellow,
+        fontSize: 8,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
+            offset: Offset(0.5, 0.5),
+            blurRadius: 2,
+            color: Colors.black,
+          ),
+        ],
+      ),
+    );
+
+    final TextPainter labelPainter = TextPainter(
+      text: labelSpan,
+      textDirection: TextDirection.ltr,
+    );
+    labelPainter.layout();
+
+    // Position label above the percentage
+    labelPainter.paint(
+      canvas,
+      Offset(
+        barX + _progressBarWidth / 2 - labelPainter.width / 2,
+        barY - textPainter.height - labelPainter.height - 6,
       ),
     );
   }
@@ -305,6 +345,37 @@ class FlagRaiseComponent extends PositionComponent {
       Offset(size.x / 2, size.y / 2 - 10),
       20,
       glowPaint,
+    );
+
+    // Draw "VICTORY!" text
+    final TextSpan victorySpan = TextSpan(
+      text: 'VICTORY!',
+      style: TextStyle(
+        color: Colors.yellow,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
+            offset: Offset(1, 1),
+            blurRadius: 3,
+            color: Colors.black,
+          ),
+        ],
+      ),
+    );
+
+    final TextPainter victoryPainter = TextPainter(
+      text: victorySpan,
+      textDirection: TextDirection.ltr,
+    );
+    victoryPainter.layout();
+
+    victoryPainter.paint(
+      canvas,
+      Offset(
+        size.x / 2 - victoryPainter.width / 2,
+        size.y / 2 - 35,
+      ),
     );
   }
 

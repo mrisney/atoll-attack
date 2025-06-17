@@ -16,6 +16,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   late Paint _fillPaint;
   late Paint _borderPaint;
   late Paint _selectedPaint;
+  late Paint _targetedPaint; // NEW: Paint for targeting indicator
 
   // Flag raising component (only for captains)
   FlagRaiseComponent? _flagRaiseComponent;
@@ -45,6 +46,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   static const double _healingAnimationDuration = 1.0;
   double _healingOpacity = 0.0;
 
+  // Targeting indicator animation
+  double _targetingPulse = 0.0;
+
   // Will be used when artwork is available
   Sprite? unitSprite;
   SpriteAnimation? walkAnimation;
@@ -63,6 +67,11 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       ..strokeWidth = 2;
     _selectedPaint = Paint()
       ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    // NEW: Targeting indicator paint
+    _targetedPaint = Paint()
+      ..color = Colors.grey.shade400
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
   }
@@ -209,11 +218,18 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         _renderSimpleShapes(canvas);
       }
 
-      // Always render health bar and selection indicator (unless playing death animation)
+      // Always render health bar and indicators (unless playing death animation)
       if (!_isPlayingDeathAnimation) {
         _renderHealthBar(canvas);
+
+        // Render selection indicator
         if (model.isSelected) {
           _renderSelectionIndicator(canvas);
+        }
+
+        // NEW: Render targeting indicator
+        if (model.isTargeted) {
+          _renderTargetingIndicator(canvas);
         }
 
         // Render flag raising indicator for captains at apex
@@ -401,23 +417,70 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
   void _renderHealthBar(Canvas canvas) {
     final healthPercent = model.health / model.maxHealth;
-    if (healthPercent < 1.0) {
+
+    // Always show health bar during combat or when damaged
+    if (healthPercent < 1.0 || model.isInCombat) {
       // Background
       canvas.drawRect(
-        Rect.fromLTWH(size.x / 2 - model.radius, size.y / 2 - model.radius - 5,
-            model.radius * 2, 3),
-        Paint()..color = Colors.grey.withOpacity(0.5),
+        Rect.fromLTWH(size.x / 2 - model.radius, size.y / 2 - model.radius - 8,
+            model.radius * 2, 4),
+        Paint()..color = Colors.grey.withOpacity(0.7),
       );
 
       // Health amount
+      Color healthColor = healthPercent > 0.6
+          ? Colors.green
+          : (healthPercent > 0.3 ? Colors.orange : Colors.red);
+
       canvas.drawRect(
-        Rect.fromLTWH(size.x / 2 - model.radius, size.y / 2 - model.radius - 5,
-            model.radius * 2 * healthPercent, 3),
-        Paint()
-          ..color = healthPercent > 0.5
-              ? Colors.green
-              : (healthPercent > 0.25 ? Colors.orange : Colors.red),
+        Rect.fromLTWH(size.x / 2 - model.radius, size.y / 2 - model.radius - 8,
+            model.radius * 2 * healthPercent, 4),
+        Paint()..color = healthColor,
       );
+
+      // Health bar border
+      canvas.drawRect(
+        Rect.fromLTWH(size.x / 2 - model.radius, size.y / 2 - model.radius - 8,
+            model.radius * 2, 4),
+        Paint()
+          ..color = Colors.white.withOpacity(0.8)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+
+      // Show health text during combat
+      if (model.isInCombat) {
+        final healthText = '${model.health.round()}/${model.maxHealth.round()}';
+        final TextSpan textSpan = TextSpan(
+          text: healthText,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(
+                offset: Offset(0.5, 0.5),
+                blurRadius: 2,
+                color: Colors.black,
+              ),
+            ],
+          ),
+        );
+
+        final TextPainter textPainter = TextPainter(
+          text: textSpan,
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+
+        textPainter.paint(
+          canvas,
+          Offset(
+            size.x / 2 - textPainter.width / 2,
+            size.y / 2 - model.radius - 20,
+          ),
+        );
+      }
     }
   }
 
@@ -426,6 +489,49 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       Offset(size.x / 2, size.y / 2),
       model.radius + 3,
       _selectedPaint,
+    );
+  }
+
+  // NEW: Render targeting indicator
+  void _renderTargetingIndicator(Canvas canvas) {
+    // Update pulse animation
+    _targetingPulse += 0.1;
+
+    // Create a pulsing grey circle around targeted units
+    final double pulseRadius =
+        model.radius + 6 + math.sin(_targetingPulse * 2) * 2;
+    final double pulseOpacity = 0.6 + math.sin(_targetingPulse * 3) * 0.2;
+
+    // Update paint opacity for pulsing effect
+    _targetedPaint.color = Colors.grey.shade400.withOpacity(pulseOpacity);
+
+    canvas.drawCircle(
+      Offset(size.x / 2, size.y / 2),
+      pulseRadius,
+      _targetedPaint,
+    );
+
+    // Draw crosshairs to make it clear this is a target
+    final Paint crosshairPaint = Paint()
+      ..color = Colors.grey.shade300.withOpacity(pulseOpacity)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    final double crosshairSize = 8;
+    final center = Offset(size.x / 2, size.y / 2);
+
+    // Horizontal line
+    canvas.drawLine(
+      Offset(center.dx - crosshairSize, center.dy),
+      Offset(center.dx + crosshairSize, center.dy),
+      crosshairPaint,
+    );
+
+    // Vertical line
+    canvas.drawLine(
+      Offset(center.dx, center.dy - crosshairSize),
+      Offset(center.dx, center.dy + crosshairSize),
+      crosshairPaint,
     );
   }
 
@@ -571,24 +677,10 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         gameRef.captainReachedApex(this);
       }
 
-      // Update progress bar with current flag raising progress
+      // Remove the old progress bar component since flag component handles it now
       if (_progressBarComponent != null) {
-        // Calculate progress value based on flag raising or game state
-        double progressValue = 0.0;
-
-        // If flag raising is in progress, use that progress
-        if (_flagRaiseComponent!.progress > 0) {
-          progressValue = _flagRaiseComponent!.progress;
-        }
-        // Otherwise use a sample progress value
-        else {
-          // For now, use a simple oscillating value for demonstration
-          progressValue =
-              (math.sin(DateTime.now().millisecondsSinceEpoch / 1000) + 1) / 2;
-        }
-
-        // Update the progress bar component
-        _progressBarComponent!.updateProgress(progressValue);
+        remove(_progressBarComponent!);
+        _progressBarComponent = null;
       }
     }
 
@@ -614,58 +706,35 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       return; // Don't update model during death animation
     }
 
-    // Check if archer should be in attack state based on nearby enemies
-    if (model.type == UnitType.archer) {
+    // Check if archer should be in attack state and spawn arrows
+    if (model.type == UnitType.archer &&
+        model.isInCombat &&
+        model.targetEnemy != null) {
       try {
-        final units = gameRef.getAllUnits();
-        // Get elevation for range calculation (with safety check)
-        double elevation = 0.0;
-        try {
-          elevation = gameRef.getElevationAt(model.position);
-        } catch (e) {
-          // Use default elevation if error occurs
-        }
+        // Update arrow spawn timing
+        _timeSinceLastArrow += dt;
 
-        // Calculate effective range based on elevation
-        double effectiveRange = elevation > 0.6 ? 100.0 : model.attackRange;
+        // Spawn arrow when attacking and cooldown is ready
+        if (model.state == UnitState.attacking &&
+            _timeSinceLastArrow >= _arrowCooldown) {
+          _timeSinceLastArrow = 0;
 
-        // Find nearest enemy in range
-        UnitComponent? nearestEnemy;
-        double nearestDistance = effectiveRange;
+          // Create and add arrow component
+          final arrow = ArrowComponent(
+            startPosition: position.clone(),
+            targetPosition: Vector2(
+                model.targetEnemy!.position.x, model.targetEnemy!.position.y),
+            team: model.team,
+          );
 
-        for (final unit in units) {
-          if (unit.model.team != model.team && unit.model.health > 0) {
-            final distance = model.position.distanceTo(unit.model.position);
-            if (distance <= effectiveRange && distance < nearestDistance) {
-              nearestDistance = distance;
-              nearestEnemy = unit;
-              model.state = UnitState.attacking;
-            }
-          }
-        }
-
-        // Spawn arrow if in attack state and cooldown elapsed
-        if (model.state == UnitState.attacking && nearestEnemy != null) {
-          _timeSinceLastArrow += 1 / 60; // Approximate for dt
-          if (_timeSinceLastArrow >= _arrowCooldown) {
-            _timeSinceLastArrow = 0;
-
-            // Create and add arrow component
-            final arrow = ArrowComponent(
-              startPosition: position.clone(),
-              targetPosition: nearestEnemy.position.clone(),
-              team: model.team,
-            );
-
-            gameRef.add(arrow);
-          }
-        } else {
-          _timeSinceLastArrow =
-              _arrowCooldown; // Ready to fire immediately when enemy appears
+          gameRef.add(arrow);
         }
       } catch (e) {
-        // Silently handle any errors in attack state detection
+        // Silently handle any errors in arrow spawning
       }
+    } else {
+      // Reset arrow timer when not in combat
+      _timeSinceLastArrow = _arrowCooldown;
     }
 
     // Update victory animation
@@ -733,6 +802,10 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     model.isSelected = selected;
   }
 
+  void setTargeted(bool targeted) {
+    model.isTargeted = targeted;
+  }
+
   void setTargetPosition(Vector2 target) {
     // Set the exact target position from player input
     model.targetPosition = target.clone();
@@ -761,8 +834,8 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
   /// Set an enemy unit as target
   void setTargetEnemy(UnitModel enemy) {
-    // Set the enemy as target
-    model.targetEnemy = enemy;
+    // Use the new setTargetEnemy method from UnitModel
+    model.setTargetEnemy(enemy, playerInitiated: true);
 
     // Also set initial target position to enemy position
     model.targetPosition = enemy.position.clone();
@@ -807,9 +880,15 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       }
     }
 
+    // Add targeting status to info
+    String targetingStatus = '';
+    if (model.isTargeted) {
+      targetingStatus = '\nTARGETED FOR ATTACK';
+    }
+
     // Display unit information using game's notification system
     gameRef.showUnitInfo("Unit: ${typeStr.toUpperCase()}\n"
         "Team: ${teamStr.toUpperCase()}\n"
-        "Health: $healthPercent%$flagStatus");
+        "Health: $healthPercent%$flagStatus$targetingStatus");
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 // Import flag raising constants from config
 import '../constants/game_config.dart';
+import '../rules/combat_rules.dart'; // Use existing combat rules
 
 enum UnitType {
   captain,
@@ -39,6 +40,7 @@ class UnitModel {
   double radius;
   Color color;
   bool isSelected;
+  bool isTargeted; // Track if this unit is targeted for attack
   List<Vector2>? path;
   bool forceRedirect = false; // Flag to prioritize player commands over combat
 
@@ -51,9 +53,12 @@ class UnitModel {
   bool hasPlantedFlag = false;
   Team team;
 
-  // Combat targeting
+  // Combat targeting and state
   UnitModel? targetEnemy;
   double attackCooldown = 0.0;
+  bool isInCombat = false;
+  double combatEngagementRange = 25.0; // Range to start combat
+  bool wasPlayerInitiated = false; // Track if this attack was player-initiated
 
   // Flag raising properties (for captains)
   bool isRaisingFlag = false;
@@ -82,24 +87,33 @@ class UnitModel {
     double? radius,
     Color? color,
     this.isSelected = false,
+    this.isTargeted = false,
     this.path,
     this.isOnLandCallback,
     this.getTerrainSpeedCallback,
   })  :
-        // Set type-specific properties
+        // Set type-specific properties with enhanced combat stats
         attackRange = type == UnitType.archer
-            ? 50.0
-            : (type == UnitType.swordsman ? 15.0 : 0.0),
+            ? 60.0 // Increased archer range
+            : (type == UnitType.swordsman
+                ? 20.0
+                : 15.0), // Increased melee range
         attackPower = type == UnitType.archer
-            ? 8.0
-            : (type == UnitType.swordsman ? 12.0 : 0.0),
-        defense = type == UnitType.swordsman ? 10.0 : 3.0,
+            ? 15.0 // Increased archer damage
+            : (type == UnitType.swordsman
+                ? 20.0
+                : 10.0), // Increased swordsman damage
+        defense = type == UnitType.swordsman
+            ? 15.0
+            : 5.0, // Increased swordsman defense
         health = type == UnitType.swordsman
-            ? 100.0
-            : (type == UnitType.captain ? 60.0 : 80.0),
+            ? 120.0 // Increased swordsman health
+            : (type == UnitType.captain
+                ? 80.0
+                : 100.0), // Increased archer health
         maxHealth = type == UnitType.swordsman
-            ? 100.0
-            : (type == UnitType.captain ? 60.0 : 80.0),
+            ? 120.0
+            : (type == UnitType.captain ? 80.0 : 100.0),
         // Set movement properties with type-specific defaults from config
         maxSpeed = maxSpeed ??
             (type == UnitType.captain
@@ -132,6 +146,150 @@ class UnitModel {
     // F = ma, so a = F/m
     Vector2 acceleration = force.scaled(1.0 / mass);
     velocity += acceleration;
+  }
+
+  /// Set a target enemy and initiate combat using CombatRules
+  void setTargetEnemy(UnitModel enemy, {bool playerInitiated = false}) {
+    targetEnemy = enemy;
+    wasPlayerInitiated = playerInitiated;
+
+    // Give slight advantage to player-initiated attacks
+    if (playerInitiated &&
+        health == maxHealth &&
+        enemy.health == enemy.maxHealth) {
+      // Add 1-2 points of health advantage for initiating attack
+      final bonus = type == enemy.type ? 2.0 : 1.0;
+      health = math.min(
+          maxHealth + bonus, maxHealth * 1.1); // Cap at 110% max health
+    }
+  }
+
+  /// Check if unit should engage in combat using CombatRules
+  bool shouldEngageInCombat(List<UnitModel> allUnits) {
+    if (health <= 0 || state == UnitState.raisingFlag) return false;
+
+    // If we have a specific target enemy, check if we can attack it
+    if (targetEnemy != null && targetEnemy!.health > 0) {
+      if (CombatRules.canAttack(this, targetEnemy!)) {
+        double distance = position.distanceTo(targetEnemy!.position);
+
+        // For archers, check if they have high ground advantage for extended range
+        double effectiveRange = attackRange;
+        if (type == UnitType.archer) {
+          // Assume we can get elevation somehow - for now use a simple distance check
+          // In real implementation, this would use elevationAtPosition
+          effectiveRange = 80.0; // Extended range for archers on high ground
+        }
+
+        // Engage if within effective range
+        return distance <= effectiveRange;
+      }
+    }
+
+    // Look for nearby enemies if no specific target
+    final potentialTargets =
+        allUnits.where((u) => u.team != team && u.health > 0).toList();
+
+    if (potentialTargets.isNotEmpty) {
+      // Use CombatRules to find the best target
+      final bestTarget = CombatRules.findBestTarget(this, potentialTargets);
+      if (bestTarget != null) {
+        targetEnemy = bestTarget;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Process combat between this unit and target enemy using CombatRules
+  void processCombat(double dt) {
+    if (targetEnemy == null || targetEnemy!.health <= 0 || health <= 0) {
+      isInCombat = false;
+      return;
+    }
+
+    double distance = position.distanceTo(targetEnemy!.position);
+
+    // Calculate effective range based on unit type and position
+    double effectiveRange = attackRange;
+    if (type == UnitType.archer) {
+      // Archers get extended range (simulate high ground advantage)
+      effectiveRange = 80.0;
+    }
+
+    // Check if we can attack using CombatRules
+    if (!CombatRules.canAttack(this, targetEnemy!) ||
+        distance > effectiveRange) {
+      // If enemy is too far, move toward them (but only for melee units)
+      if (type != UnitType.archer && distance > combatEngagementRange) {
+        targetPosition = targetEnemy!.position.clone();
+        isInCombat = false;
+        return;
+      }
+      // Archers stay in position if target is out of range
+      else if (type == UnitType.archer) {
+        isInCombat = false;
+        return;
+      }
+    }
+
+    // We're in combat range and can attack
+    isInCombat = true;
+    state = UnitState.attacking;
+
+    // IMPORTANT: Archers should NOT move toward target when in range
+    if (type == UnitType.archer && distance <= effectiveRange) {
+      // Stop moving - archer is in position to fire
+      velocity = Vector2.zero();
+      targetPosition = position.clone(); // Stay in current position
+    }
+
+    // Reduce cooldown
+    if (attackCooldown > 0) {
+      attackCooldown -= dt;
+    }
+
+    // Attack if cooldown is ready
+    if (attackCooldown <= 0) {
+      // Use CombatRules to calculate damage
+      double damage = CombatRules.calculateDamage(this, targetEnemy!);
+
+      // Apply damage
+      targetEnemy!.health -= damage;
+      targetEnemy!.health = math.max(0, targetEnemy!.health);
+
+      // Set attack cooldown based on unit type
+      attackCooldown = type == UnitType.archer ? 1.0 : 0.8;
+
+      // Counter-attack if enemy is alive and can attack back
+      if (targetEnemy!.health > 0 &&
+          CombatRules.canAttack(targetEnemy!, this) &&
+          targetEnemy!.attackCooldown <= 0) {
+        double counterDamage = CombatRules.calculateDamage(targetEnemy!, this);
+        health -= counterDamage;
+        health = math.max(0, health);
+        targetEnemy!.attackCooldown =
+            targetEnemy!.type == UnitType.archer ? 1.0 : 0.8;
+      }
+
+      // Stop combat if either unit dies
+      if (health <= 0 || targetEnemy!.health <= 0) {
+        isInCombat = false;
+        if (targetEnemy!.health <= 0) {
+          targetEnemy = null; // Clear dead target
+        }
+      }
+    }
+
+    // Movement behavior during combat
+    if (type == UnitType.archer) {
+      // Archers stay still when attacking
+      velocity = Vector2.zero();
+    } else {
+      // Melee units slow down during combat but can still move slightly
+      velocity *= 0.3;
+    }
   }
 
   /// Start flag raising process (for captains only)
@@ -252,103 +410,30 @@ class UnitModel {
       }
     }
 
-    // Adjust archer range based on elevation
-    double effectiveAttackRange = attackRange;
-    if (type == UnitType.archer) {
-      // If archer is at high elevation (> 0.6), increase range to 100m
-      if (elevationAtPosition != null && elevationAtPosition > 0.6) {
-        effectiveAttackRange = 100.0;
+    // PRIORITY 1: Process combat if engaged or should engage
+    if (shouldEngageInCombat(units)) {
+      processCombat(dt);
+      if (isInCombat) {
+        return; // Don't process other behaviors during active combat
       }
     }
 
-    // Update attack cooldown
-    if (attackCooldown > 0) {
-      attackCooldown -= dt;
-    }
+    // PRIORITY 2: Handle player-directed targeting
+    if (!forceRedirect && targetEnemy != null && targetEnemy!.health > 0) {
+      double distance = position.distanceTo(targetEnemy!.position);
 
-    // Combat logic - check for enemies in range, but only if not being redirected by player
-    if (!forceRedirect && state != UnitState.raisingFlag) {
-      // If we have a specific target enemy, prioritize it
-      if (targetEnemy != null && targetEnemy!.health > 0) {
-        double distance = position.distanceTo(targetEnemy!.position);
-
-        // If target is in range, attack it
-        if (distance <= effectiveAttackRange &&
-            attackPower > 0 &&
-            attackCooldown <= 0) {
-          // Attack enemy
-          state = UnitState.attacking;
-          targetEnemy!.health -= attackPower * dt * 0.5;
-
-          // Set attack cooldown (different for each unit type)
-          attackCooldown = type == UnitType.archer ? 0.8 : 0.5;
-
-          // Enemy counterattacks if in range
-          if (targetEnemy!.attackRange >= distance &&
-              targetEnemy!.attackPower > 0) {
-            health -= targetEnemy!.attackPower * dt * 0.5;
-          }
-
-          // Slow down when attacking
-          velocity *= 0.8;
-        }
-        // If target is out of range, move toward it
-        else if (distance > effectiveAttackRange && attackPower > 0) {
-          // Only update target position if we're not already moving there
-          if (targetPosition != targetEnemy!.position) {
-            targetPosition = targetEnemy!.position.clone();
-          }
-        }
-      }
-      // Otherwise, look for any enemies in range
-      else {
-        final enemies =
-            units.where((u) => u.team != team && u.health > 0).toList();
-
-        // Find closest enemy in range
-        UnitModel? closestEnemy;
-        double closestDistance = double.infinity;
-
-        for (final enemy in enemies) {
-          double distance = position.distanceTo(enemy.position);
-          if (distance <= effectiveAttackRange && distance < closestDistance) {
-            closestEnemy = enemy;
-            closestDistance = distance;
-          }
-        }
-
-        // Attack closest enemy if found and cooldown is ready
-        if (closestEnemy != null && attackPower > 0 && attackCooldown <= 0) {
-          state = UnitState.attacking;
-          closestEnemy.health -= attackPower * dt * 0.5;
-
-          // Set attack cooldown
-          attackCooldown = type == UnitType.archer ? 0.8 : 0.5;
-
-          // Enemy counterattacks if in range
-          if (closestEnemy.attackRange >= closestDistance &&
-              closestEnemy.attackPower > 0) {
-            health -= closestEnemy.attackPower * dt * 0.5;
-          }
-
-          // Slow down when attacking
-          velocity *= 0.8;
-        }
+      // Move toward target if not in combat range
+      if (distance > combatEngagementRange) {
+        targetPosition = targetEnemy!.position.clone();
+        state = UnitState.moving;
       }
     } else if (forceRedirect) {
-      // If being redirected, prioritize movement
+      // If being redirected by player, prioritize movement
       state = isSelected ? UnitState.selected : UnitState.moving;
-
-      // Reset the force redirect flag after a short time to allow normal behavior to resume
       forceRedirect = false;
     }
 
-    // Find allies for flocking
-    final allies = units
-        .where((u) => u.team == team && u.id != id && u.health > 0)
-        .toList();
-
-    // Determine movement target
+    // PRIORITY 3: Normal movement and behavior
     Vector2? moveTarget;
 
     // If unit has a specific target position, prioritize that
@@ -361,7 +446,7 @@ class UnitModel {
         // We've reached the target, stop moving
         velocity = Vector2.zero();
         state = UnitState.idle;
-        return; // Skip the rest of the update
+        return;
       }
     }
     // Otherwise move toward apex if not at flag (and not a captain with flag planted)
@@ -370,7 +455,7 @@ class UnitModel {
     }
 
     // Apply movement forces
-    if (moveTarget != null && state != UnitState.raisingFlag) {
+    if (moveTarget != null && state != UnitState.raisingFlag && !isInCombat) {
       // Direction to target
       Vector2 toTarget = moveTarget - position;
       double distToTarget = toTarget.length;
@@ -397,8 +482,8 @@ class UnitModel {
       }
     }
 
-    // Apply separation from other units (unless raising flag)
-    if (state != UnitState.raisingFlag) {
+    // Apply separation from other units (unless raising flag or in combat)
+    if (state != UnitState.raisingFlag && !isInCombat) {
       Vector2 separation = _calculateSeparation(units);
       applyForce(separation);
     }
@@ -412,7 +497,7 @@ class UnitModel {
     // Calculate new position
     Vector2 newPosition = position + velocity * dt;
 
-    // Check if new position is on land - with fallback to always allow movement
+    // Check if new position is on land
     bool isOnLand = true;
     if (isOnLandCallback != null) {
       isOnLand = isOnLandCallback!(newPosition);
@@ -420,10 +505,8 @@ class UnitModel {
 
     // Always allow movement but handle water differently
     if (isOnLand) {
-      // Safe to move
       position = newPosition;
     } else {
-      // Still move but slower and redirect toward apex
       position = newPosition;
       velocity = velocity * 0.5;
 
@@ -437,16 +520,13 @@ class UnitModel {
     // Update state based on current situation
     if (hasPlantedFlag && type == UnitType.captain) {
       state = UnitState.idle;
-      // Captain with planted flag stays mostly still but can sway slightly
       final now = DateTime.now().millisecondsSinceEpoch / 500;
       Vector2 smallMovement = Vector2(
         math.sin(now) * 0.5,
         math.cos(now) * 0.5,
       );
       position += smallMovement * dt;
-    } else if (state == UnitState.attacking) {
-      // Keep attacking state for a short time but don't stop moving
-    } else if (state != UnitState.raisingFlag) {
+    } else if (state != UnitState.raisingFlag && !isInCombat) {
       state = isSelected ? UnitState.selected : UnitState.moving;
     }
   }
