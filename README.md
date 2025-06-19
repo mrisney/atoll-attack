@@ -1,6 +1,6 @@
 # Atoll Attack - Island Conquest RTS
 
-![Atoll Attack Screenshot](screenshot.png)
+<img src="screenshot.png" alt="Atoll Attack Screenshot" width="300">
 
 A real-time strategy game where players battle for control of procedurally generated islands. Command your units, capture strategic positions, and plant your flag at the island's apex to claim victory!
 
