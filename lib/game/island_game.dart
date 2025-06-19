@@ -1,3 +1,4 @@
+// lib/game/island_game.dart
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -9,6 +10,7 @@ import 'unit_component.dart';
 import 'ship_component.dart';
 import '../models/ship_model.dart';
 import '../models/unit_model.dart';
+import '../models/player_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
 import '../managers/unit_selection_manager.dart';
@@ -32,6 +34,12 @@ class IslandGame extends FlameGame
   double islandRadius;
   bool showPerimeter;
 
+  // Player management
+  final Map<String, Player> players = {
+    'blue': Players.blue,
+    'red': Players.red,
+  };
+
   // Zoom and camera properties
   Vector2 cameraOrigin = Vector2.zero();
   double zoomLevel = 1.0;
@@ -43,7 +51,7 @@ class IslandGame extends FlameGame
   late IslandComponent _island;
   bool _isLoaded = false;
   final List<UnitComponent> _units = [];
-  final List<ShipComponent> _ships = []; // NEW: Ship storage
+  final List<ShipComponent> _ships = [];
   PathfindingService? _pathfindingService;
 
   // Game state
@@ -52,21 +60,6 @@ class IslandGame extends FlameGame
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
   static const double _rulesUpdateInterval = kRulesUpdateInterval;
-
-  // Unit tracking
-  static const int maxCaptainsPerTeam = kMaxCaptainsPerTeam;
-  static const int maxArchersPerTeam = kMaxArchersPerTeam;
-  static const int maxSwordsmenPerTeam = kMaxSwordsmenPerTeam;
-
-  int _blueCaptainsSpawned = 0;
-  int _blueArchersSpawned = 0;
-  int _blueSwordsmenSpawned = 0;
-  int _redCaptainsSpawned = 0;
-  int _redArchersSpawned = 0;
-  int _redSwordsmenSpawned = 0;
-
-  int _blueUnitsRemaining = kTotalUnitsPerTeam;
-  int _redUnitsRemaining = kTotalUnitsPerTeam;
 
   // UI interaction
   Vector2? _selectionStart;
@@ -103,7 +96,6 @@ class IslandGame extends FlameGame
     required this.islandRadius,
     this.showPerimeter = false,
   }) {
-    // Initialize unit selection manager in constructor to avoid late initialization errors
     _unitSelectionManager = UnitSelectionManager(this);
   }
 
@@ -122,21 +114,13 @@ class IslandGame extends FlameGame
   @override
   Color backgroundColor() => const Color(0xFF1a1a2e);
 
-  // =============================================================================
-  // INITIALIZATION
-  // =============================================================================
-
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // Set game size using actual screen pixels (not ScreenUtil)
     gameSize = Vector2(size.x, size.y);
-
-    // Initialize responsive size utility with actual game size
     ResponsiveSizeUtil().init(Size(gameSize.x, gameSize.y));
 
-    // Create and add island
     _island = IslandComponent(
       amplitude: amplitude,
       wavelength: wavelength,
@@ -144,42 +128,35 @@ class IslandGame extends FlameGame
       seed: seed,
       gameSize: gameSize,
       islandRadius: islandRadius,
-      showPerimeter: false, // Always false
+      showPerimeter: false,
     );
     _island.position = gameSize / 2;
     add(_island);
 
-    // Initialize game state
+    // Reset players
+    Players.resetAll();
     GameRules.resetGame();
-    _blueUnitsRemaining = kTotalUnitsPerTeam;
-    _redUnitsRemaining = kTotalUnitsPerTeam;
 
-    // NEW: Spawn initial ships
     await _spawnInitialShips();
 
     _isLoaded = true;
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
   }
 
-  // Spawn ships at game start
   Future<void> _spawnInitialShips() async {
-    // Wait for island to be ready
     await Future.delayed(const Duration(milliseconds: 100));
 
     final coastline = getCoastline();
     if (coastline.isEmpty) {
       debugPrint("No coastline found, using default ship spawn locations");
-      // Fallback positions in deeper water
       _spawnShip(Team.blue, Vector2(gameSize.x * 0.25, gameSize.y * 0.15));
       _spawnShip(Team.red, Vector2(gameSize.x * 0.75, gameSize.y * 0.85));
       return;
     }
 
-    // Find north and south coastline points for ship spawning
     final northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
     final southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
-    // Spawn ships further offshore to avoid immediate land collision
     final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 60);
     final redShipPos = Vector2(southPoint.dx, southPoint.dy + 60);
 
@@ -190,10 +167,9 @@ class IslandGame extends FlameGame
   bool _isNearShore(Vector2 position) {
     if (!_isLoaded || !_island.isMounted) return false;
 
-    const double shoreDetectionRange = 40.0; // Increased range
-    const int checkPoints = 20; // More check points
+    const double shoreDetectionRange = 40.0;
+    const int checkPoints = 20;
 
-    // Method 1: Radial checking with multiple distances
     for (double radius = 15.0; radius <= shoreDetectionRange; radius += 5.0) {
       for (int i = 0; i < checkPoints; i++) {
         double angle = (i / checkPoints) * 2 * math.pi;
@@ -209,7 +185,6 @@ class IslandGame extends FlameGame
       }
     }
 
-    // Method 2: Grid-based checking
     const double gridStep = 8.0;
     const double gridRange = 35.0;
 
@@ -223,7 +198,6 @@ class IslandGame extends FlameGame
       }
     }
 
-    // Method 3: Line scanning in cardinal directions
     List<Vector2> directions = [
       Vector2(1, 0),
       Vector2(-1, 0),
@@ -248,7 +222,6 @@ class IslandGame extends FlameGame
     return false;
   }
 
-  // NEW: Spawn a ship at specified position
   void _spawnShip(Team team, Vector2 position) {
     final shipModel = ShipModel(
       id: 'ship_${team.name}_${DateTime.now().millisecondsSinceEpoch}',
@@ -299,7 +272,7 @@ class IslandGame extends FlameGame
     this.bias = bias;
     this.seed = seed;
     this.islandRadius = islandRadius;
-    this.showPerimeter = false; // Always false
+    this.showPerimeter = false;
 
     if (_isLoaded && _island.isMounted) {
       _island.updateParams(
@@ -312,11 +285,6 @@ class IslandGame extends FlameGame
     }
   }
 
-  // =============================================================================
-  // COORDINATE SYSTEM
-  // =============================================================================
-
-  /// Convert screen tap position to game world coordinates
   Vector2 screenToWorldPosition(Vector2 screenPos) {
     return cameraOrigin + screenPos / zoomLevel;
   }
@@ -325,11 +293,6 @@ class IslandGame extends FlameGame
     return (worldPos - cameraOrigin) * zoomLevel;
   }
 
-  // =============================================================================
-  // INPUT HANDLING
-  // =============================================================================
-
-  @override
   @override
   bool onTapDown(TapDownInfo info) {
     final screenPos = info.eventPosition.global;
@@ -337,7 +300,6 @@ class IslandGame extends FlameGame
 
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 300) {
-      // Double tap - zoom functionality
       final newZoom = zoomLevel > 1.0 ? 1.0 : 1.75;
       zoomLevel = newZoom;
       cameraOrigin =
@@ -348,16 +310,13 @@ class IslandGame extends FlameGame
     }
     _lastTapTime = now;
 
-    // PRIORITY 1: Check for ship taps first (ships are larger and should have priority)
     final tappedShip = _findShipAtPosition(worldBeforeZoom);
     if (tappedShip != null) {
-      // Handle ship selection through the selection manager
       _unitSelectionManager.handleShipTap(tappedShip);
       _notifyUIUpdate();
       return true;
     }
 
-    // PRIORITY 2: Check for unit taps
     final tappedUnit = _findUnitAtPosition(worldBeforeZoom);
     if (tappedUnit != null) {
       _unitSelectionManager.handleUnitTap(tappedUnit);
@@ -365,7 +324,6 @@ class IslandGame extends FlameGame
       return true;
     }
 
-    // PRIORITY 3: Handle empty space tap (movement commands)
     _unitSelectionManager.handleEmptyTap(worldBeforeZoom);
     _notifyUIUpdate();
 
@@ -392,12 +350,10 @@ class IslandGame extends FlameGame
       final distance = (_selectionEnd! - _selectionStart!).length;
 
       if (distance > 15) {
-        // Drag selection using selection manager
         _unitSelectionManager.selectUnitsInBox(
             _selectionStart!, _selectionEnd!);
         _notifyUIUpdate();
       } else {
-        // Single click movement
         final worldPos = screenToWorldPosition(_selectionStart!);
         if (_unitSelectionManager.hasSelection) {
           _unitSelectionManager.moveSelectedUnits(worldPos);
@@ -418,13 +374,7 @@ class IslandGame extends FlameGame
     clampCamera();
   }
 
-  // =============================================================================
-  // SHIP INTERACTION
-  // =============================================================================
-
-  // NEW: Find ship at position
   ShipComponent? _findShipAtPosition(Vector2 worldPosition) {
-    // Sort ships by distance to prioritize closer ones
     final shipsWithDistance = <MapEntry<ShipComponent, double>>[];
 
     for (final ship in _ships) {
@@ -432,12 +382,10 @@ class IslandGame extends FlameGame
 
       final distance = ship.position.distanceTo(worldPosition);
       if (distance <= ship.model.radius + 15) {
-        // Larger tap area for ships
         shipsWithDistance.add(MapEntry(ship, distance));
       }
     }
 
-    // Return the closest ship if any found
     if (shipsWithDistance.isNotEmpty) {
       shipsWithDistance.sort((a, b) => a.value.compareTo(b.value));
       return shipsWithDistance.first.key;
@@ -446,7 +394,6 @@ class IslandGame extends FlameGame
     return null;
   }
 
-  // NEW: Deploy unit from ship at position
   bool deployUnitFromShip(UnitType unitType, Team team) {
     final teamShips =
         _ships.where((s) => s.model.team == team && s.model.canDeployUnits());
@@ -466,14 +413,15 @@ class IslandGame extends FlameGame
     return false;
   }
 
-  // NEW: Spawn unit at specific position (for ship deployment)
   void spawnUnitAtPosition(UnitType unitType, Team team, Vector2 position) {
+    final playerId = team == Team.blue ? 'blue' : 'red';
+    final player = players[playerId]!;
+
     final unitModel = UnitModel(
-      id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${team.name}_${unitType.name}',
+      id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${playerId}_${unitType.name}',
       type: unitType,
       position: position,
-      team: team,
-      velocity: Vector2.zero(),
+      playerId: playerId,
       isOnLandCallback: isOnLand,
       getTerrainSpeedCallback: getMovementSpeedMultiplier,
     );
@@ -482,54 +430,16 @@ class IslandGame extends FlameGame
     add(unitComponent);
     _units.add(unitComponent);
 
-    // Update spawn counts
-    if (team == Team.blue) {
-      switch (unitType) {
-        case UnitType.captain:
-          _blueCaptainsSpawned++;
-        case UnitType.archer:
-          _blueArchersSpawned++;
-        case UnitType.swordsman:
-          _blueSwordsmenSpawned++;
-      }
-    } else {
-      switch (unitType) {
-        case UnitType.captain:
-          _redCaptainsSpawned++;
-        case UnitType.archer:
-          _redArchersSpawned++;
-        case UnitType.swordsman:
-          _redSwordsmenSpawned++;
-      }
-    }
+    // Update player spawn counts
+    player.spawnedUnits[unitType] = player.spawnedUnits[unitType]! + 1;
+    player.unitsRemaining--;
 
     debugPrint(
-        'Deployed ${unitType.name} for ${team.name} team at $position from ship');
+        'Deployed ${unitType.name} for ${player.name} at $position from ship');
     _notifyUIUpdate();
-  }
-
-  // =============================================================================
-  // UNIT SELECTION AND MOVEMENT
-  // =============================================================================
-
-  void _selectUnitsInBox(Vector2 screenStart, Vector2 screenEnd) {
-    _unitSelectionManager.selectUnitsInBox(screenStart, screenEnd);
-    _notifyUIUpdate();
-  }
-
-  void _moveSelectedUnits(Vector2 worldTarget) {
-    if (_unitSelectionManager.selectedUnits.isEmpty) return;
-
-    _createDestinationMarker(worldTarget);
-
-    for (final unit in _unitSelectionManager.selectedUnits) {
-      unit.setTargetPosition(worldTarget);
-      debugPrint('Moving ${unit.model.type.name} to $worldTarget');
-    }
   }
 
   UnitComponent? _findUnitAtPosition(Vector2 worldPosition) {
-    // Sort units by distance to prioritize closer ones
     final unitsWithDistance = <MapEntry<UnitComponent, double>>[];
 
     for (final unit in _units) {
@@ -541,7 +451,6 @@ class IslandGame extends FlameGame
       }
     }
 
-    // Return the closest unit if any found
     if (unitsWithDistance.isNotEmpty) {
       unitsWithDistance.sort((a, b) => a.value.compareTo(b.value));
       return unitsWithDistance.first.key;
@@ -554,10 +463,6 @@ class IslandGame extends FlameGame
     _unitSelectionManager.clearSelection();
     _notifyUIUpdate();
   }
-
-  // =============================================================================
-  // DESTINATION MARKER
-  // =============================================================================
 
   void _createDestinationMarker(Vector2 worldPosition) {
     _destinationMarker = worldPosition.clone();
@@ -600,10 +505,6 @@ class IslandGame extends FlameGame
     }
   }
 
-  // =============================================================================
-  // ZOOM CONTROLS
-  // =============================================================================
-
   void zoomIn() {
     zoomLevel = (zoomLevel + 0.25).clamp(minZoom, maxZoom);
     clampCamera();
@@ -620,10 +521,6 @@ class IslandGame extends FlameGame
     clampCamera();
   }
 
-  // =============================================================================
-  // PAN CONTROLS
-  // =============================================================================
-
   void panCamera(Vector2 direction) {
     const panSpeed = 50.0;
     final scaledDirection = direction.normalized() * panSpeed / zoomLevel;
@@ -636,58 +533,21 @@ class IslandGame extends FlameGame
   void panLeft() => panCamera(Vector2(-1, 0));
   void panRight() => panCamera(Vector2(1, 0));
 
-  // =============================================================================
-  // UNIT SPAWNING (Modified for ship integration)
-  // =============================================================================
-
   void spawnSingleUnit(UnitType unitType, Team team) {
     if (!_isLoaded || !_island.isMounted) return;
 
-    // NEW: Try to deploy from ship first
+    final playerId = team == Team.blue ? 'blue' : 'red';
+    final player = players[playerId]!;
+
+    if (!player.canSpawnUnit(unitType)) {
+      debugPrint('${player.name} cannot spawn more ${unitType.name} units');
+      return;
+    }
+
     if (deployUnitFromShip(unitType, team)) {
-      return; // Successfully deployed from ship
-    }
-
-    // Fallback to old spawning method if no ships available
-    final unitModels = _units.map((u) => u.model).toList();
-
-    // Check if team can spawn more units
-    if (!GameRules.canSpawnMoreUnits(team)) {
-      debugPrint('${team.name} team has no more units remaining');
       return;
     }
 
-    // Check specific unit type limits
-    bool canSpawn = false;
-    if (team == Team.blue) {
-      switch (unitType) {
-        case UnitType.captain:
-          canSpawn = _blueCaptainsSpawned < maxCaptainsPerTeam &&
-              !GameRules.hasCaptain(team, unitModels);
-        case UnitType.archer:
-          canSpawn = _blueArchersSpawned < maxArchersPerTeam;
-        case UnitType.swordsman:
-          canSpawn = _blueSwordsmenSpawned < maxSwordsmenPerTeam;
-      }
-    } else {
-      switch (unitType) {
-        case UnitType.captain:
-          canSpawn = _redCaptainsSpawned < maxCaptainsPerTeam &&
-              !GameRules.hasCaptain(team, unitModels);
-        case UnitType.archer:
-          canSpawn = _redArchersSpawned < maxArchersPerTeam;
-        case UnitType.swordsman:
-          canSpawn = _redSwordsmenSpawned < maxSwordsmenPerTeam;
-      }
-    }
-
-    if (!canSpawn) {
-      debugPrint(
-          '${team.name} team has reached maximum ${unitType.name} units');
-      return;
-    }
-
-    // Find spawn location (fallback method)
     final apex = getIslandApex();
     if (apex == null) return;
 
@@ -697,7 +557,6 @@ class IslandGame extends FlameGame
       return;
     }
 
-    // Find spawn points
     final northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
     final southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
@@ -707,13 +566,8 @@ class IslandGame extends FlameGame
     final spawnX = gameSize.x / 2 + (rng.nextDouble() * 60 - 30);
     final unitPosition = Vector2(spawnX, baseSpawnY);
 
-    // Create unit using the position-based method
     spawnUnitAtPosition(unitType, team, unitPosition);
   }
-
-  // =============================================================================
-  // GAME LOOP
-  // =============================================================================
 
   @override
   void update(double dt) {
@@ -733,18 +587,18 @@ class IslandGame extends FlameGame
       _currentGameState =
           GameRules.processRules(unitModels, apex: getIslandApex());
 
-      _blueUnitsRemaining = _currentGameState.blueUnitsRemaining;
-      _redUnitsRemaining = _currentGameState.redUnitsRemaining;
+      // Update player units remaining from game rules
+      players['blue']!.unitsRemaining = _currentGameState.blueUnitsRemaining;
+      players['red']!.unitsRemaining = _currentGameState.redUnitsRemaining;
 
-      // Handle unit removal
       bool unitsRemoved = false;
       for (final unitId in _currentGameState.unitsToRemove) {
         final unitToRemove =
             _units.where((u) => u.model.id == unitId).firstOrNull;
         if (unitToRemove != null) {
-          _decrementUnitCount(unitToRemove.model.team, unitToRemove.model.type);
+          _decrementUnitCount(
+              unitToRemove.model.playerId, unitToRemove.model.type);
 
-          // If unit is selected, clear it from selection
           if (unitToRemove.model.isSelected) {
             _unitSelectionManager.clearSelection();
           }
@@ -764,7 +618,6 @@ class IslandGame extends FlameGame
 
       if (unitsRemoved) _notifyUIUpdate();
 
-      // Handle victory
       if (_currentGameState.victoryState.hasWinner && !_victoryAchieved) {
         _victoryAchieved = true;
         final winner = _currentGameState.victoryState.winner;
@@ -794,7 +647,7 @@ class IslandGame extends FlameGame
         ..color = ship.model.team == Team.blue
             ? Colors.blue.withOpacity(0.6)
             : Colors.red.withOpacity(0.6)
-        ..strokeWidth = 3 / zoomLevel // Adjust for zoom
+        ..strokeWidth = 3 / zoomLevel
         ..style = PaintingStyle.stroke;
 
       final waypointPaint = Paint()
@@ -803,7 +656,6 @@ class IslandGame extends FlameGame
             : Colors.red.withOpacity(0.8)
         ..style = PaintingStyle.fill;
 
-      // Convert world coordinates to screen coordinates and draw path
       Vector2 currentPos = ship.position;
       for (int i = 0; i < ship.model.navigationPath!.length; i++) {
         Vector2 waypoint = ship.model.navigationPath![i];
@@ -811,17 +663,15 @@ class IslandGame extends FlameGame
         Vector2 currentScreen = worldToScreenPosition(currentPos);
         Vector2 waypointScreen = worldToScreenPosition(waypoint);
 
-        // Draw path line
         canvas.drawLine(
           Offset(currentScreen.x, currentScreen.y),
           Offset(waypointScreen.x, waypointScreen.y),
           pathPaint,
         );
 
-        // Draw waypoint marker
         canvas.drawCircle(
           Offset(waypointScreen.x, waypointScreen.y),
-          4 / zoomLevel, // Adjust for zoom
+          4 / zoomLevel,
           waypointPaint,
         );
 
@@ -832,14 +682,12 @@ class IslandGame extends FlameGame
 
   @override
   void render(Canvas canvas) {
-    // Apply zoom
     canvas.save();
     canvas.translate(-cameraOrigin.x * zoomLevel, -cameraOrigin.y * zoomLevel);
     canvas.scale(zoomLevel);
     super.render(canvas);
     canvas.restore();
 
-    // Draw selection box (screen coordinates)
     if (_isDragging && _selectionStart != null && _selectionEnd != null) {
       final rect = Rect.fromPoints(
         Offset(_selectionStart!.x, _selectionStart!.y),
@@ -849,16 +697,12 @@ class IslandGame extends FlameGame
       canvas.drawRect(rect, _selectionBorderPaint);
     }
 
-    // Draw destination marker (world coordinates converted to screen)
     if (_destinationMarker != null) {
       final screenPos = worldToScreenPosition(_destinationMarker!);
       _drawDestinationMarker(canvas, screenPos);
     }
 
-    // Render attack range indicators
     _unitSelectionManager.renderAttackRange(canvas);
-
-    // Draw ship navigation paths for selected ships
     _renderSelectedShipPaths(canvas);
   }
 
@@ -888,42 +732,11 @@ class IslandGame extends FlameGame
         Offset(center.dx, center.dy + 15), crosshairPaint);
   }
 
-  // =============================================================================
-  // UTILITY METHODS
-  // =============================================================================
+  void _decrementUnitCount(String playerId, UnitType type) {
+    final player = players[playerId]!;
 
-  void _decrementUnitCount(Team team, UnitType type) {
-    if (team == Team.blue) {
-      switch (type) {
-        case UnitType.captain:
-          _blueCaptainsSpawned =
-              (_blueCaptainsSpawned - 1).clamp(0, maxCaptainsPerTeam);
-        case UnitType.archer:
-          _blueArchersSpawned =
-              (_blueArchersSpawned - 1).clamp(0, maxArchersPerTeam);
-        case UnitType.swordsman:
-          _blueSwordsmenSpawned =
-              (_blueSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
-      }
-    } else {
-      switch (type) {
-        case UnitType.captain:
-          _redCaptainsSpawned =
-              (_redCaptainsSpawned - 1).clamp(0, maxCaptainsPerTeam);
-        case UnitType.archer:
-          _redArchersSpawned =
-              (_redArchersSpawned - 1).clamp(0, maxArchersPerTeam);
-        case UnitType.swordsman:
-          _redSwordsmenSpawned =
-              (_redSwordsmenSpawned - 1).clamp(0, maxSwordsmenPerTeam);
-      }
-    }
-
-    GameRules.decrementUnitsRemaining(team);
-    if (team == Team.blue) {
-      _blueUnitsRemaining = GameRules.getUnitsRemaining(team);
-    } else {
-      _redUnitsRemaining = GameRules.getUnitsRemaining(team);
+    if (player.spawnedUnits[type]! > 0) {
+      player.spawnedUnits[type] = player.spawnedUnits[type]! - 1;
     }
 
     _notifyUIUpdate();
@@ -935,7 +748,6 @@ class IslandGame extends FlameGame
         onUnitCountsChanged!();
       }
     } catch (e) {
-      // Ignore errors when the notifier is no longer mounted
       debugPrint('Error in _notifyUIUpdate: $e');
     }
   }
@@ -955,9 +767,40 @@ class IslandGame extends FlameGame
     _notifyUIUpdate();
   }
 
-  // =============================================================================
-  // GETTERS AND ACCESSORS
-  // =============================================================================
+  // Player-based getters
+  int getPlayerUnitCount(String playerId) {
+    return _units
+        .where((u) => u.model.playerId == playerId && u.model.health > 0)
+        .length;
+  }
+
+  // Backward compatibility getters
+  int get blueUnitCount => getPlayerUnitCount('blue');
+  int get redUnitCount => getPlayerUnitCount('red');
+  int get blueUnitsRemaining => players['blue']!.unitsRemaining;
+  int get redUnitsRemaining => players['red']!.unitsRemaining;
+  int get blueCaptainsRemaining =>
+      players['blue']!.getRemainingUnits(UnitType.captain);
+  int get blueArchersRemaining =>
+      players['blue']!.getRemainingUnits(UnitType.archer);
+  int get blueSwordsmenRemaining =>
+      players['blue']!.getRemainingUnits(UnitType.swordsman);
+  int get redCaptainsRemaining =>
+      players['red']!.getRemainingUnits(UnitType.captain);
+  int get redArchersRemaining =>
+      players['red']!.getRemainingUnits(UnitType.archer);
+  int get redSwordsmenRemaining =>
+      players['red']!.getRemainingUnits(UnitType.swordsman);
+
+  int get blueUnitsSpawned {
+    final player = players['blue']!;
+    return player.spawnedUnits.values.fold(0, (sum, count) => sum + count);
+  }
+
+  int get redUnitsSpawned {
+    final player = players['red']!;
+    return player.spawnedUnits.values.fold(0, (sum, count) => sum + count);
+  }
 
   double getElevationAt(Vector2 worldPosition) => _isLoaded && _island.isMounted
       ? _island.getElevationAt(worldPosition)
@@ -978,8 +821,6 @@ class IslandGame extends FlameGame
       _isLoaded && _island.isMounted ? _island.getCoastline() : [];
 
   List<UnitComponent> getAllUnits() => _units;
-
-  // NEW: Ship access methods
   List<ShipComponent> getAllShips() => _ships;
 
   PathfindingService? getPathfindingService() {
@@ -996,14 +837,18 @@ class IslandGame extends FlameGame
     if (_victoryAchieved) return true;
 
     final blueCount = _units
-        .where((u) => u.model.team == Team.blue && u.model.health > 0)
+        .where((u) => u.model.playerId == 'blue' && u.model.health > 0)
         .length;
     final redCount = _units
-        .where((u) => u.model.team == Team.red && u.model.health > 0)
+        .where((u) => u.model.playerId == 'red' && u.model.health > 0)
         .length;
 
-    if ((blueCount > 0 && redCount == 0 && redUnitsRemaining == 0) ||
-        (redCount > 0 && blueCount == 0 && blueUnitsRemaining == 0)) {
+    if ((blueCount > 0 &&
+            redCount == 0 &&
+            players['red']!.unitsRemaining == 0) ||
+        (redCount > 0 &&
+            blueCount == 0 &&
+            players['blue']!.unitsRemaining == 0)) {
       _victoryAchieved = true;
       return true;
     }
@@ -1011,29 +856,6 @@ class IslandGame extends FlameGame
     return false;
   }
 
-  // Unit count getters
-  int get blueUnitCount => _units
-      .where((u) => u.model.team == Team.blue && u.model.health > 0)
-      .length;
-  int get redUnitCount => _units
-      .where((u) => u.model.team == Team.red && u.model.health > 0)
-      .length;
-  int get blueUnitsRemaining => _blueUnitsRemaining;
-  int get redUnitsRemaining => _redUnitsRemaining;
-  int get blueCaptainsRemaining => maxCaptainsPerTeam - _blueCaptainsSpawned;
-  int get blueArchersRemaining => maxArchersPerTeam - _blueArchersSpawned;
-  int get blueSwordsmenRemaining => maxSwordsmenPerTeam - _blueSwordsmenSpawned;
-  int get redCaptainsRemaining => maxCaptainsPerTeam - _redCaptainsSpawned;
-  int get redArchersRemaining => maxArchersPerTeam - _redArchersSpawned;
-  int get redSwordsmenRemaining => maxSwordsmenPerTeam - _redSwordsmenSpawned;
-
-  // Spawned unit count getters (for provider compatibility)
-  int get blueUnitsSpawned =>
-      _blueCaptainsSpawned + _blueArchersSpawned + _blueSwordsmenSpawned;
-  int get redUnitsSpawned =>
-      _redCaptainsSpawned + _redArchersSpawned + _redSwordsmenSpawned;
-
-  // NEW: Ship count getters
   int get blueShipCount => _ships
       .where((s) => s.model.team == Team.blue && !s.model.isDestroyed)
       .length;
@@ -1041,21 +863,9 @@ class IslandGame extends FlameGame
       .where((s) => s.model.team == Team.red && !s.model.isDestroyed)
       .length;
 
-  List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
-  List<ShipComponent> get selectedShips =>
-      _unitSelectionManager.selectedShips; // NEW
-  UnitComponent? get selectedUnit =>
-      _unitSelectionManager.selectedUnits.isNotEmpty
-          ? _unitSelectionManager.selectedUnits.first
-          : null;
-  ShipComponent? get selectedShip => // NEW
-      _unitSelectionManager.selectedShips.isNotEmpty
-          ? _unitSelectionManager.selectedShips.first
-          : null;
-
   double get blueHealthPercent {
     final blueUnits = _units
-        .where((u) => u.model.team == Team.blue && u.model.health > 0)
+        .where((u) => u.model.playerId == 'blue' && u.model.health > 0)
         .toList();
     if (blueUnits.isEmpty) return 0.0;
     final totalHealth =
@@ -1067,7 +877,7 @@ class IslandGame extends FlameGame
 
   double get redHealthPercent {
     final redUnits = _units
-        .where((u) => u.model.team == Team.red && u.model.health > 0)
+        .where((u) => u.model.playerId == 'red' && u.model.health > 0)
         .toList();
     if (redUnits.isEmpty) return 0.0;
     final totalHealth =
@@ -1077,11 +887,20 @@ class IslandGame extends FlameGame
     return maxHealth > 0 ? totalHealth / maxHealth : 0.0;
   }
 
-  // NEW: Get selected objects info (units + ships)
+  List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
+  List<ShipComponent> get selectedShips => _unitSelectionManager.selectedShips;
+  UnitComponent? get selectedUnit =>
+      _unitSelectionManager.selectedUnits.isNotEmpty
+          ? _unitSelectionManager.selectedUnits.first
+          : null;
+  ShipComponent? get selectedShip =>
+      _unitSelectionManager.selectedShips.isNotEmpty
+          ? _unitSelectionManager.selectedShips.first
+          : null;
+
   List<Map<String, dynamic>> getSelectedUnitsInfo() {
     final List<Map<String, dynamic>> objectsInfo = [];
 
-    // Add selected units
     final selectedUnits = _unitSelectionManager.selectedUnits;
     for (final unit in selectedUnits) {
       final healthPercent =
@@ -1101,7 +920,6 @@ class IslandGame extends FlameGame
       });
     }
 
-    // Add selected ships
     final selectedShips = _unitSelectionManager.selectedShips;
     for (final ship in selectedShips) {
       final healthPercent = (ship.model.healthPercent * 100).toInt();
@@ -1123,7 +941,6 @@ class IslandGame extends FlameGame
     return objectsInfo;
   }
 
-  // NEW: Get cargo info for ship deployment UI
   Map<String, dynamic>? getSelectedShipCargo() {
     final selectedShips = _unitSelectionManager.selectedShips;
     if (selectedShips.isEmpty) return null;
@@ -1141,7 +958,6 @@ class IslandGame extends FlameGame
     };
   }
 
-  // NEW: Deploy unit from selected ship
   bool deployUnitFromSelectedShip(UnitType unitType) {
     final selectedShips = _unitSelectionManager.selectedShips;
     if (selectedShips.isEmpty) return false;
@@ -1149,31 +965,24 @@ class IslandGame extends FlameGame
     return _unitSelectionManager.deployUnitFromShip(unitType);
   }
 
-  // =============================================================================
-  // DEPRECATED/LEGACY METHODS (for compatibility)
-  // =============================================================================
+  void toggleApexMarker(bool show) {}
 
-  void toggleApexMarker(bool show) {
-    // No-op - feature deprecated
-  }
-
-  void spawnUnitsAtPosition(Vector2 position) {
-    // No-op - use spawnSingleUnit instead
-  }
+  void spawnUnitsAtPosition(Vector2 position) {}
 
   void spawnUnits(int count, Vector2 position, Team team) {
-    // Legacy method - use spawnSingleUnit instead
     if (!_isLoaded || !_island.isMounted) return;
 
-    final unitsRemaining =
-        team == Team.blue ? blueUnitsRemaining : redUnitsRemaining;
-    if (unitsRemaining <= 0) {
-      debugPrint('${team.name} team has reached maximum total units');
+    final playerId = team == Team.blue ? 'blue' : 'red';
+    final player = players[playerId]!;
+
+    if (player.unitsRemaining <= 0) {
+      debugPrint('${player.name} has reached maximum total units');
       return;
     }
 
     final unitModels = _units.map((u) => u.model).toList();
-    final hasCaptain = GameRules.hasCaptain(team, unitModels);
+    final hasCaptain = unitModels.any((u) =>
+        u.playerId == playerId && u.type == UnitType.captain && u.health > 0);
 
     if (!hasCaptain) {
       spawnSingleUnit(UnitType.captain, team);
@@ -1184,7 +993,7 @@ class IslandGame extends FlameGame
     }
 
     debugPrint(
-        "Spawned units for ${team.name} team. Blue remaining: $blueUnitsRemaining, Red remaining: $redUnitsRemaining");
+        "Spawned units for ${player.name}. Units remaining: ${player.unitsRemaining}");
   }
 
   void forceRefreshUnitCounts() {
