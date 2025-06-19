@@ -1,6 +1,7 @@
-import 'package:flame/game.dart';
+// lib/game/game_screen.dart
 import 'package:flutter/material.dart';
-import 'package:atoll_wars/game/island_game.dart'; // Update the path if needed
+import 'package:flame/game.dart';
+import '../game/island_game.dart';
 import 'package:flame/extensions.dart';
 
 class GameScreen extends StatefulWidget {
@@ -13,24 +14,20 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late IslandGame _game;
   double _baseZoom = 1.0;
-  bool _gameCreated = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_gameCreated) {
-      final Size screenSize = MediaQuery.of(context).size;
-      _game = IslandGame(
-        amplitude: 0.5,
-        wavelength: 1.0,
-        bias: 0.0,
-        seed: 42,
-        gameSize: Vector2(screenSize.width, screenSize.height),
-        islandRadius: 0.7,
-        showPerimeter: false,
-      );
-      _gameCreated = true;
-    }
+  void initState() {
+    super.initState();
+    // Create game without initial size - Flame will handle it
+    _game = IslandGame(
+      amplitude: 0.5,
+      wavelength: 1.0,
+      bias: 0.0,
+      seed: 42,
+      gameSize: Vector2.zero(), // Will be set by Flame
+      islandRadius: 0.7,
+      showPerimeter: false,
+    );
   }
 
   @override

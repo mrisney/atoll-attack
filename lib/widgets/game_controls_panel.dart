@@ -1,11 +1,7 @@
-// Step 1: Update lib/widgets/game_controls_panel.dart
-// Replace your current GameControlsPanel with this responsive version:
-
+// lib/widgets/game_controls_panel.dart
 import 'package:flutter/material.dart';
-import 'package:riverpod/riverpod.dart';
-import '../providers/game_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart'; // Add this import
+import '../providers/game_provider.dart';
 import '../models/unit_model.dart';
 import '../constants/game_config.dart';
 
@@ -18,33 +14,31 @@ class GameControlsPanel extends ConsumerWidget {
     final game = ref.watch(gameProvider);
     final unitCounts = ref.watch(unitCountsProvider);
 
+    final screenSize = MediaQuery.of(context).size;
+    final isLandscape = screenSize.width > screenSize.height;
+
     return Material(
       color: Colors.transparent,
       child: Container(
         constraints: BoxConstraints(
-          // Responsive sizing using ScreenUtil
-          maxWidth: ScreenUtil().orientation == Orientation.landscape
-              ? 600.w // 60% of design width in landscape
-              : 350.w, // Responsive width in portrait
-          minWidth: 320.w, // Minimum responsive width
-          maxHeight: ScreenUtil().orientation == Orientation.landscape
-              ? 400.h // Responsive height in landscape
-              : 220.h, // Smaller responsive height in portrait
+          maxWidth: isLandscape ? 600 : 350,
+          minWidth: 320,
+          maxHeight: isLandscape ? 400 : 220,
         ),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
-          borderRadius: BorderRadius.circular(12.r), // Responsive border radius
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: Colors.white.withOpacity(0.3),
-            width: 1.w, // Responsive border width
+            width: 1,
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: 12.h, // Responsive vertical padding
-            horizontal: 16.w, // Responsive horizontal padding
+          padding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 16,
           ),
-          child: ScreenUtil().orientation == Orientation.landscape
+          child: isLandscape
               ? _buildLandscapeLayout(context, unitCounts, game)
               : _buildPortraitLayout(context, unitCounts, game),
         ),
@@ -57,23 +51,23 @@ class GameControlsPanel extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header with close button - responsive
+        // Header with close button
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
+            const Text(
               'Spawn Units',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 14.sp, // Responsive font size
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
               ),
             ),
             SizedBox(
-              width: 24.w, // Responsive button size
-              height: 24.h,
+              width: 24,
+              height: 24,
               child: IconButton(
-                icon: Icon(Icons.close, color: Colors.white70, size: 16.sp),
+                icon: const Icon(Icons.close, color: Colors.white70, size: 16),
                 onPressed: onClose,
                 constraints: const BoxConstraints(),
                 padding: EdgeInsets.zero,
@@ -82,24 +76,24 @@ class GameControlsPanel extends ConsumerWidget {
           ],
         ),
 
-        SizedBox(height: 8.h), // Responsive spacing
+        const SizedBox(height: 8),
 
-        // Compact unit count display - responsive
+        // Compact unit count display
         _buildCompactUnitCountDisplay(unitCounts),
 
-        SizedBox(height: 8.h), // Responsive spacing
+        const SizedBox(height: 8),
 
-        // Spawn buttons in horizontal layout - responsive
+        // Spawn buttons in horizontal layout
         _buildResponsiveSpawnButtons(unitCounts, game),
 
-        SizedBox(height: 4.h), // Responsive spacing
+        const SizedBox(height: 4),
 
-        // Instructions - responsive
+        // Instructions
         Text(
           'Drag to select • Click to move • Tap to spawn',
           style: TextStyle(
             color: Colors.white.withOpacity(0.6),
-            fontSize: 9.sp, // Responsive font size
+            fontSize: 9,
           ),
           textAlign: TextAlign.center,
         ),
@@ -112,23 +106,23 @@ class GameControlsPanel extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header with close button - responsive
+        // Header with close button
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
+            const Text(
               'Spawn Units',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 18.sp, // Larger responsive font in landscape
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
             SizedBox(
-              width: 28.w, // Responsive button size
-              height: 28.h,
+              width: 28,
+              height: 28,
               child: IconButton(
-                icon: Icon(Icons.close, color: Colors.white70, size: 20.sp),
+                icon: const Icon(Icons.close, color: Colors.white70, size: 20),
                 onPressed: onClose,
                 constraints: const BoxConstraints(),
                 padding: EdgeInsets.zero,
@@ -137,24 +131,24 @@ class GameControlsPanel extends ConsumerWidget {
           ],
         ),
 
-        SizedBox(height: 12.h), // Responsive spacing
+        const SizedBox(height: 12),
 
-        // Extended unit count display for landscape - responsive
+        // Extended unit count display for landscape
         _buildExtendedUnitCountDisplay(unitCounts),
 
-        SizedBox(height: 16.h), // Responsive spacing
+        const SizedBox(height: 16),
 
-        // Larger spawn buttons for landscape - responsive
+        // Larger spawn buttons for landscape
         _buildLandscapeSpawnButtons(unitCounts, game),
 
-        SizedBox(height: 8.h), // Responsive spacing
+        const SizedBox(height: 8),
 
-        // Instructions - responsive
+        // Instructions
         Text(
           'Drag to select units • Click to move selected units • Tap buttons to spawn units',
           style: TextStyle(
             color: Colors.white.withOpacity(0.7),
-            fontSize: 11.sp, // Responsive font size
+            fontSize: 11,
           ),
           textAlign: TextAlign.center,
         ),
@@ -164,25 +158,24 @@ class GameControlsPanel extends ConsumerWidget {
 
   Widget _buildCompactUnitCountDisplay(Map<String, int> unitCounts) {
     return Container(
-      padding: EdgeInsets.symmetric(
-          horizontal: 8.w, vertical: 4.h), // Responsive padding
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.grey.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(6.r), // Responsive border radius
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _buildTeamInfo('Blue', unitCounts, Colors.blue, true),
           Container(
-            height: 35.h, // Responsive height
-            width: 1.w, // Responsive width
+            height: 35,
+            width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
           _buildTeamInfo('Red', unitCounts, Colors.red, false),
           Container(
-            height: 35.h, // Responsive height
-            width: 1.w, // Responsive width
+            height: 35,
+            width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
           _buildCompactLegend(),
@@ -193,22 +186,19 @@ class GameControlsPanel extends ConsumerWidget {
 
   Widget _buildExtendedUnitCountDisplay(Map<String, int> unitCounts) {
     return Container(
-      padding: EdgeInsets.all(12.w), // Responsive padding
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.grey.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(8.r), // Responsive border radius
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           Expanded(
               child: _buildDetailedTeamInfo(
                   'Blue Team', unitCounts, Colors.blue, true)),
-          SizedBox(width: 20.w), // Responsive spacing
-          Container(
-              height: 60.h, // Responsive height
-              width: 1.w, // Responsive width
-              color: Colors.white.withOpacity(0.3)),
-          SizedBox(width: 20.w), // Responsive spacing
+          const SizedBox(width: 20),
+          Container(height: 60, width: 1, color: Colors.white.withOpacity(0.3)),
+          const SizedBox(width: 20),
           Expanded(
               child: _buildDetailedTeamInfo(
                   'Red Team', unitCounts, Colors.red, false)),
@@ -228,30 +218,30 @@ class GameControlsPanel extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 6.w, // Responsive width
-              height: 6.h, // Responsive height
+              width: 6,
+              height: 6,
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
               ),
             ),
-            SizedBox(width: 3.w), // Responsive spacing
+            const SizedBox(width: 3),
             Text(
               team,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: 10.sp, // Responsive font size
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-        SizedBox(height: 2.h), // Responsive spacing
+        const SizedBox(height: 2),
         Text(
           'C:${unitCounts['${prefix}CaptainsRemaining']} A:${unitCounts['${prefix}ArchersRemaining']} S:${unitCounts['${prefix}SwordsmenRemaining']}',
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white70,
-            fontSize: 8.sp, // Responsive font size
+            fontSize: 8,
             fontFamily: 'monospace',
           ),
         ),
@@ -259,7 +249,7 @@ class GameControlsPanel extends ConsumerWidget {
           'Total: ${unitCounts['${prefix}Remaining']}',
           style: TextStyle(
             color: color,
-            fontSize: 9.sp, // Responsive font size
+            fontSize: 9,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -276,25 +266,25 @@ class GameControlsPanel extends ConsumerWidget {
         Row(
           children: [
             Container(
-              width: 12.w, // Responsive width
-              height: 12.h, // Responsive height
+              width: 12,
+              height: 12,
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
               ),
             ),
-            SizedBox(width: 8.w), // Responsive spacing
+            const SizedBox(width: 8),
             Text(
               teamName,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: 14.sp, // Responsive font size
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ],
         ),
-        SizedBox(height: 8.h), // Responsive spacing
+        const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -323,48 +313,44 @@ class GameControlsPanel extends ConsumerWidget {
     );
   }
 
-  // Responsive text styles
   TextStyle get _labelStyle =>
-      TextStyle(color: Colors.white70, fontSize: 12.sp // Responsive font size
-          );
+      const TextStyle(color: Colors.white70, fontSize: 12);
 
-  TextStyle get _valueStyle => TextStyle(
-      color: Colors.white,
-      fontSize: 12.sp, // Responsive font size
-      fontWeight: FontWeight.w600);
+  TextStyle get _valueStyle => const TextStyle(
+      color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600);
 
   Widget _buildCompactLegend() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        const Text(
           'Legend',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 9.sp, // Responsive font size
+            fontSize: 9,
             fontWeight: FontWeight.w600,
           ),
         ),
         Text(
           'C=Captain($kMaxCaptainsPerTeam)',
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white54,
-            fontSize: 7.sp, // Responsive font size
+            fontSize: 7,
           ),
         ),
         Text(
           'A=Archer($kMaxArchersPerTeam)',
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white54,
-            fontSize: 7.sp, // Responsive font size
+            fontSize: 7,
           ),
         ),
         Text(
           'S=Swords($kMaxSwordsmenPerTeam)',
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white54,
-            fontSize: 7.sp, // Responsive font size
+            fontSize: 7,
           ),
         ),
       ],
@@ -378,15 +364,15 @@ class GameControlsPanel extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              const Text(
                 'Blue Team:',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 11.sp, // Responsive font size
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              SizedBox(height: 4.h), // Responsive spacing
+              const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -419,20 +405,20 @@ class GameControlsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        SizedBox(width: 8.w), // Responsive spacing
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              const Text(
                 'Red Team:',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 11.sp, // Responsive font size
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              SizedBox(height: 4.h), // Responsive spacing
+              const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -475,15 +461,15 @@ class GameControlsPanel extends ConsumerWidget {
         Expanded(
           child: Column(
             children: [
-              Text(
+              const Text(
                 'Blue Team',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 14.sp, // Responsive font size
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 8.h), // Responsive spacing
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -516,19 +502,19 @@ class GameControlsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        SizedBox(width: 24.w), // Responsive spacing
+        const SizedBox(width: 24),
         Expanded(
           child: Column(
             children: [
-              Text(
+              const Text(
                 'Red Team',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 14.sp, // Responsive font size
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 8.h), // Responsive spacing
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -574,45 +560,40 @@ class GameControlsPanel extends ConsumerWidget {
     String count,
   ) {
     return SizedBox(
-      width: 45.w, // Responsive width
-      height: 40.h, // Responsive height
+      width: 45,
+      height: 40,
       child: ElevatedButton(
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: enabled ? color : Colors.grey.shade600,
           foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(
-              horizontal: 1.w, vertical: 1.h), // Responsive padding
-          textStyle: TextStyle(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+          textStyle: const TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 7.sp, // Responsive font size
+            fontSize: 7,
           ),
           elevation: enabled ? 2 : 0,
           shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(6.r), // Responsive border radius
+            borderRadius: BorderRadius.circular(6),
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 10.sp), // Responsive icon size
-            Text(label,
-                style: TextStyle(fontSize: 7.sp)), // Responsive font size
+            Icon(icon, size: 10),
+            Text(label, style: const TextStyle(fontSize: 7)),
             Container(
-              padding: EdgeInsets.symmetric(
-                  horizontal: 2.w, vertical: 1.h), // Responsive padding
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
               decoration: BoxDecoration(
                 color: enabled
                     ? Colors.black.withOpacity(0.3)
                     : Colors.grey.withOpacity(0.3),
-                borderRadius:
-                    BorderRadius.circular(4.r), // Responsive border radius
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 count,
-                style: TextStyle(
-                  fontSize: 7.sp, // Responsive font size
+                style: const TextStyle(
+                  fontSize: 7,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'monospace',
                 ),
@@ -633,45 +614,40 @@ class GameControlsPanel extends ConsumerWidget {
     String count,
   ) {
     return SizedBox(
-      width: 80.w, // Responsive width
-      height: 60.h, // Responsive height
+      width: 80,
+      height: 60,
       child: ElevatedButton(
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: enabled ? color : Colors.grey.shade600,
           foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(
-              horizontal: 4.w, vertical: 4.h), // Responsive padding
-          textStyle: TextStyle(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          textStyle: const TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 10.sp, // Responsive font size
+            fontSize: 10,
           ),
           elevation: enabled ? 3 : 0,
           shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(8.r), // Responsive border radius
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16.sp), // Responsive icon size
-            Text(label,
-                style: TextStyle(fontSize: 10.sp)), // Responsive font size
+            Icon(icon, size: 16),
+            Text(label, style: const TextStyle(fontSize: 10)),
             Container(
-              padding: EdgeInsets.symmetric(
-                  horizontal: 4.w, vertical: 2.h), // Responsive padding
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: enabled
                     ? Colors.black.withOpacity(0.3)
                     : Colors.grey.withOpacity(0.3),
-                borderRadius:
-                    BorderRadius.circular(8.r), // Responsive border radius
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 count,
-                style: TextStyle(
-                  fontSize: 10.sp, // Responsive font size
+                style: const TextStyle(
+                  fontSize: 10,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'monospace',
                 ),

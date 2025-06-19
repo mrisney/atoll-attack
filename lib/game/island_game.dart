@@ -16,7 +16,6 @@ import '../services/pathfinding_service.dart';
 import '../managers/unit_selection_manager.dart';
 import '../constants/game_config.dart';
 import 'dart:ui';
-import '../utils/responsive_size_util.dart';
 
 class IslandGame extends FlameGame
     with
@@ -30,7 +29,6 @@ class IslandGame extends FlameGame
   double wavelength;
   double bias;
   int seed;
-  Vector2 gameSize;
   double islandRadius;
   bool showPerimeter;
 
@@ -92,7 +90,7 @@ class IslandGame extends FlameGame
     required this.wavelength,
     required this.bias,
     required this.seed,
-    required this.gameSize,
+    required Vector2 gameSize, // Accept but don't store
     required this.islandRadius,
     this.showPerimeter = false,
   }) {
@@ -102,8 +100,8 @@ class IslandGame extends FlameGame
   void clampCamera() {
     final viewWidth = size.x / zoomLevel;
     final viewHeight = size.y / zoomLevel;
-    final mapWidth = gameSize.x;
-    final mapHeight = gameSize.y;
+    final mapWidth = size.x;
+    final mapHeight = size.y;
 
     cameraOrigin.x =
         cameraOrigin.x.clamp(0, (mapWidth - viewWidth).clamp(0, mapWidth));
@@ -118,44 +116,61 @@ class IslandGame extends FlameGame
   Future<void> onLoad() async {
     await super.onLoad();
 
-    gameSize = Vector2(size.x, size.y);
-    ResponsiveSizeUtil().init(Size(gameSize.x, gameSize.y));
-
+    // Create island with current size
     _island = IslandComponent(
       amplitude: amplitude,
       wavelength: wavelength,
       bias: bias,
       seed: seed,
-      gameSize: gameSize,
+      gameSize: size,
       islandRadius: islandRadius,
       showPerimeter: false,
     );
-    _island.position = gameSize / 2;
+    _island.position = size / 2;
     add(_island);
 
     // Reset players
     Players.resetAll();
     GameRules.resetGame();
 
+    // Wait for island to be fully loaded before spawning ships
+    await Future.delayed(const Duration(milliseconds: 500));
+
     await _spawnInitialShips();
 
     _isLoaded = true;
-    debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
+    debugPrint('Island game loaded with size: ${size.x}x${size.y}');
   }
 
   Future<void> _spawnInitialShips() async {
-    await Future.delayed(const Duration(milliseconds: 100));
+    // Give island time to generate contours
+    await Future.delayed(const Duration(milliseconds: 200));
 
     final coastline = getCoastline();
     if (coastline.isEmpty) {
-      debugPrint("No coastline found, using default ship spawn locations");
-      _spawnShip(Team.blue, Vector2(gameSize.x * 0.25, gameSize.y * 0.15));
-      _spawnShip(Team.red, Vector2(gameSize.x * 0.75, gameSize.y * 0.85));
+      debugPrint("No coastline found, retrying...");
+      // Try once more after another delay
+      await Future.delayed(const Duration(milliseconds: 300));
+      final retryCoastline = getCoastline();
+
+      if (retryCoastline.isEmpty) {
+        debugPrint("Still no coastline, using default ship spawn locations");
+        _spawnShip(Team.blue, Vector2(size.x * 0.25, size.y * 0.15));
+        _spawnShip(Team.red, Vector2(size.x * 0.75, size.y * 0.85));
+        return;
+      }
+    }
+
+    // Find extreme points on coastline
+    final validCoastline = coastline.isNotEmpty ? coastline : getCoastline();
+    if (validCoastline.isEmpty) {
+      _spawnShip(Team.blue, Vector2(size.x * 0.25, size.y * 0.15));
+      _spawnShip(Team.red, Vector2(size.x * 0.75, size.y * 0.85));
       return;
     }
 
-    final northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
-    final southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
+    final northPoint = validCoastline.reduce((a, b) => a.dy < b.dy ? a : b);
+    final southPoint = validCoastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
     final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 60);
     final redShipPos = Vector2(southPoint.dx, southPoint.dy + 60);
@@ -242,20 +257,70 @@ class IslandGame extends FlameGame
   @override
   void onGameResize(Vector2 newSize) {
     super.onGameResize(newSize);
-    gameSize = newSize;
-
-    ResponsiveSizeUtil().init(Size(newSize.x, newSize.y));
 
     if (_isLoaded && _island.isMounted) {
+      // Store old size for position scaling
+      final oldSize = _island.gameSize.clone();
+
+      // Calculate scale factors
+      final scaleX = newSize.x / oldSize.x;
+      final scaleY = newSize.y / oldSize.y;
+
+      // Update island size and position
       _island.gameSize = newSize;
       _island.position = newSize / 2;
-      _island.updateParams(
-        amplitude: amplitude,
-        wavelength: wavelength,
-        bias: bias,
-        seed: seed,
-        islandRadius: islandRadius,
+      _island.size = newSize;
+
+      // Update resolution in the island component
+      _island.updateResolution(newSize.x, newSize.y);
+
+      // Update camera region for the shader
+      _island.updateCameraRegion(
+        cameraX: 0,
+        cameraY: 0,
+        viewW: newSize.x,
+        viewH: newSize.y,
       );
+
+      // Update params WITHOUT regenerating the island
+      _island.amplitude = amplitude;
+      _island.wavelength = wavelength;
+      _island.bias = bias;
+      _island.seed = seed;
+      _island.islandRadius = islandRadius;
+      _island.radius = newSize.x * 0.3 * islandRadius;
+
+      // Wait for contours to be recalculated
+      _island.refreshContours().then((_) {
+        // Scale ship positions
+        for (final ship in _ships) {
+          ship.model.position.x *= scaleX;
+          ship.model.position.y *= scaleY;
+          ship.position.x *= scaleX;
+          ship.position.y *= scaleY;
+        }
+
+        // Scale unit positions
+        for (final unit in _units) {
+          unit.model.position.x *= scaleX;
+          unit.model.position.y *= scaleY;
+          unit.position.x *= scaleX;
+          unit.position.y *= scaleY;
+
+          // Scale target positions if they exist
+          if (unit.model.targetPosition != null) {
+            unit.model.targetPosition.x *= scaleX;
+            unit.model.targetPosition.y *= scaleY;
+          }
+        }
+
+        // Scale camera origin
+        cameraOrigin.x *= scaleX;
+        cameraOrigin.y *= scaleY;
+
+        // Clamp camera after resize
+        clampCamera();
+      });
     }
   }
 
@@ -563,7 +628,7 @@ class IslandGame extends FlameGame
     final baseSpawnY =
         team == Team.blue ? northPoint.dy + 50 : southPoint.dy - 50;
     final rng = math.Random();
-    final spawnX = gameSize.x / 2 + (rng.nextDouble() * 60 - 30);
+    final spawnX = size.x / 2 + (rng.nextDouble() * 60 - 30);
     final unitPosition = Vector2(spawnX, baseSpawnY);
 
     spawnUnitAtPosition(unitType, team, unitPosition);
