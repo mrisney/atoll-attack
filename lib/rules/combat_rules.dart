@@ -1,7 +1,32 @@
+// lib/rules/combat_rules.dart
 import '../models/unit_model.dart';
 
 /// Handles combat calculations between units with enhanced mechanics
 class CombatRules {
+  /// Check if attack is possible based on range and other factors
+  static bool canAttack(UnitModel attacker, UnitModel defender) {
+    // Skip if same player
+    if (attacker.playerId == defender.playerId) return false;
+
+    // Skip if attacker has no attack power
+    if (attacker.attackPower <= 0) return false;
+
+    // Skip if either unit is dead
+    if (attacker.health <= 0 || defender.health <= 0) return false;
+
+    // Calculate effective range
+    double effectiveRange = attacker.attackRange;
+
+    // Archers get extended range (simulating high ground advantage)
+    if (attacker.type == UnitType.archer) {
+      effectiveRange = 80.0; // Extended range for archers
+    }
+
+    // Check range
+    double distance = attacker.position.distanceTo(defender.position);
+    return distance <= effectiveRange;
+  }
+
   /// Calculate damage based on attacker and defender stats with type advantages
   static double calculateDamage(UnitModel attacker, UnitModel defender) {
     // Base damage from attacker's power
@@ -50,30 +75,6 @@ class CombatRules {
 
     // Same type units fight evenly
     return 1.0;
-  }
-
-  /// Check if attack is possible based on range and other factors
-  static bool canAttack(UnitModel attacker, UnitModel defender) {
-    // Skip if same team
-    if (attacker.team == defender.team) return false;
-
-    // Skip if attacker has no attack power
-    if (attacker.attackPower <= 0) return false;
-
-    // Skip if either unit is dead
-    if (attacker.health <= 0 || defender.health <= 0) return false;
-
-    // Calculate effective range
-    double effectiveRange = attacker.attackRange;
-
-    // Archers get extended range (simulating high ground advantage)
-    if (attacker.type == UnitType.archer) {
-      effectiveRange = 80.0; // Extended range for archers
-    }
-
-    // Check range
-    double distance = attacker.position.distanceTo(defender.position);
-    return distance <= effectiveRange;
   }
 
   /// Find the best target for a unit to attack based on priority system
@@ -140,8 +141,8 @@ class CombatRules {
 
   /// Check if two units should engage in mutual combat
   static bool shouldEngageMutualCombat(UnitModel unit1, UnitModel unit2) {
-    // Must be different teams
-    if (unit1.team == unit2.team) return false;
+    // Must be different players
+    if (unit1.playerId == unit2.playerId) return false;
 
     // Both must be alive
     if (unit1.health <= 0 || unit2.health <= 0) return false;
@@ -182,7 +183,7 @@ class CombatRules {
 
   /// Estimate combat outcome between two units (returns probability unit1 wins)
   static double estimateCombatOutcome(UnitModel unit1, UnitModel unit2) {
-    if (unit1.team == unit2.team) return 0.5; // Same team, no combat
+    if (unit1.playerId == unit2.playerId) return 0.5; // Same player, no combat
 
     double unit1Power =
         unit1.attackPower * _getTypeAdvantageMultiplier(unit1.type, unit2.type);
