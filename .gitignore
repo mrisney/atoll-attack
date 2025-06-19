@@ -1,45 +1,128 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# ----------------------------------------
+# Flutter / Dart
+# ----------------------------------------
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Dart tools
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
-.pub/
+
+# Build outputs
 /build/
+**/build/
 
-# Symbolication related
+# Generated plugin registrant
+**/GeneratedPluginRegistrant.*
+
+# Flutter export environment script
+flutter_export_environment.sh
+
+# Lockfile (for apps, track this to pin dependency versions)
+pubspec.lock
+
+# ----------------------------------------
+# Android
+# ----------------------------------------
+
+# Local config (do not commit your SDK paths or keystore passwords)
+android/local.properties
+
+# Gradle files
+android/.gradle/
+android/app/google-services.json
+
+# Build outputs
+android/app/build/
+android/build/
+
+# Launcher icons (if you generate these via flutter_launcher_icons in CI)
+android/app/src/main/res/mipmap-*
+
+# Keystore files
+android/app/*.keystore
+
+# IntelliJ project files
+**/*.iml
+
+# ----------------------------------------
+# iOS
+# ----------------------------------------
+
+# CocoaPods
+ios/Pods/
+ios/Podfile.lock
+
+# Xcode workspace and generated files
+ios/Runner.xcworkspace/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/.last_build_id
+
+# User-specific Xcode files
+**/*.xcworkspace
+**/*.xcuserstate
+**/*.xcuserdata
+
+# ----------------------------------------
+# macOS / Linux / Windows (optional)
+# ----------------------------------------
+
+# If you are NOT targeting desktop platforms, ignore their folders.
+macos/
+linux/
+windows/
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ----------------------------------------
+# Web (optional)
+# ----------------------------------------
+
+# If you are NOT building for the web, ignore this folder.
+web/
+
+# ----------------------------------------
+# IDEs / Editors
+# ----------------------------------------
+
+# VS Code
+.vscode/
+
+# Android Studio / IntelliJ
+.idea/
+*.ipr
+*.iws
+
+# Vim swap files
+*.swp
+
+# Emacs temp files
+*~
+
+# ----------------------------------------
+# Assets (generated or CI-managed)
+# ----------------------------------------
+
+# Ignore any asset folder you generate via CI or a tool
+/assets/
+# If you only want to ignore a sub-folder, e.g. Flutter launcher icons:
+# /assets/icon/
+
+# ----------------------------------------
+# Miscellaneous
+# ----------------------------------------
+
+# Log files
+*.log
+
+# Symbolication / obfuscation outputs
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release

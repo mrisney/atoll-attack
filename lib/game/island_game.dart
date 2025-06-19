@@ -7,7 +7,7 @@ import 'dart:math' as math;
 import 'island_component.dart';
 import 'unit_component.dart';
 import 'ship_component.dart';
-import 'ship_model.dart';
+import '../models/ship_model.dart';
 import '../models/unit_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
@@ -161,7 +161,7 @@ class IslandGame extends FlameGame
     debugPrint('Island game loaded with size: ${gameSize.x}x${gameSize.y}');
   }
 
-  // NEW: Spawn ships at game start
+  // Spawn ships at game start
   Future<void> _spawnInitialShips() async {
     // Wait for island to be ready
     await Future.delayed(const Duration(milliseconds: 100));
@@ -169,9 +169,9 @@ class IslandGame extends FlameGame
     final coastline = getCoastline();
     if (coastline.isEmpty) {
       debugPrint("No coastline found, using default ship spawn locations");
-      // Fallback positions
-      _spawnShip(Team.blue, Vector2(gameSize.x * 0.25, gameSize.y * 0.2));
-      _spawnShip(Team.red, Vector2(gameSize.x * 0.75, gameSize.y * 0.8));
+      // Fallback positions in deeper water
+      _spawnShip(Team.blue, Vector2(gameSize.x * 0.25, gameSize.y * 0.15));
+      _spawnShip(Team.red, Vector2(gameSize.x * 0.75, gameSize.y * 0.85));
       return;
     }
 
@@ -179,12 +179,73 @@ class IslandGame extends FlameGame
     final northPoint = coastline.reduce((a, b) => a.dy < b.dy ? a : b);
     final southPoint = coastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
-    // Spawn ships slightly offshore from north and south points
-    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 40);
-    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 40);
+    // Spawn ships further offshore to avoid immediate land collision
+    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 60);
+    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 60);
 
     _spawnShip(Team.blue, blueShipPos);
     _spawnShip(Team.red, redShipPos);
+  }
+
+  bool _isNearShore(Vector2 position) {
+    if (!_isLoaded || !_island.isMounted) return false;
+
+    const double shoreDetectionRange = 40.0; // Increased range
+    const int checkPoints = 20; // More check points
+
+    // Method 1: Radial checking with multiple distances
+    for (double radius = 15.0; radius <= shoreDetectionRange; radius += 5.0) {
+      for (int i = 0; i < checkPoints; i++) {
+        double angle = (i / checkPoints) * 2 * math.pi;
+        Vector2 checkPos = position +
+            Vector2(
+              math.cos(angle) * radius,
+              math.sin(angle) * radius,
+            );
+
+        if (isOnLand(checkPos)) {
+          return true;
+        }
+      }
+    }
+
+    // Method 2: Grid-based checking
+    const double gridStep = 8.0;
+    const double gridRange = 35.0;
+
+    for (double x = -gridRange; x <= gridRange; x += gridStep) {
+      for (double y = -gridRange; y <= gridRange; y += gridStep) {
+        Vector2 checkPos = position + Vector2(x, y);
+
+        if (isOnLand(checkPos)) {
+          return true;
+        }
+      }
+    }
+
+    // Method 3: Line scanning in cardinal directions
+    List<Vector2> directions = [
+      Vector2(1, 0),
+      Vector2(-1, 0),
+      Vector2(0, 1),
+      Vector2(0, -1),
+      Vector2(1, 1),
+      Vector2(-1, 1),
+      Vector2(1, -1),
+      Vector2(-1, -1),
+    ];
+
+    for (Vector2 direction in directions) {
+      for (double distance = 10.0; distance <= 45.0; distance += 2.0) {
+        Vector2 checkPos = position + direction * distance;
+
+        if (isOnLand(checkPos)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   // NEW: Spawn a ship at specified position
@@ -193,13 +254,16 @@ class IslandGame extends FlameGame
       id: 'ship_${team.name}_${DateTime.now().millisecondsSinceEpoch}',
       team: team,
       position: position,
+      isOnLandCallback: isOnLand,
+      isNearShoreCallback: _isNearShore,
     );
 
     final shipComponent = ShipComponent(model: shipModel);
     add(shipComponent);
     _ships.add(shipComponent);
 
-    debugPrint('Spawned ${team.name} turtle ship at $position');
+    debugPrint(
+        'Spawned ${team.name} turtle ship at $position with enhanced navigation');
   }
 
   @override
@@ -266,12 +330,14 @@ class IslandGame extends FlameGame
   // =============================================================================
 
   @override
+  @override
   bool onTapDown(TapDownInfo info) {
     final screenPos = info.eventPosition.global;
     final worldBeforeZoom = screenToWorldPosition(screenPos);
 
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 300) {
+      // Double tap - zoom functionality
       final newZoom = zoomLevel > 1.0 ? 1.0 : 1.75;
       zoomLevel = newZoom;
       cameraOrigin =
@@ -282,14 +348,16 @@ class IslandGame extends FlameGame
     }
     _lastTapTime = now;
 
-    // NEW: Check for ship taps first (ships are larger, should have priority)
+    // PRIORITY 1: Check for ship taps first (ships are larger and should have priority)
     final tappedShip = _findShipAtPosition(worldBeforeZoom);
     if (tappedShip != null) {
+      // Handle ship selection through the selection manager
       _unitSelectionManager.handleShipTap(tappedShip);
       _notifyUIUpdate();
       return true;
     }
 
+    // PRIORITY 2: Check for unit taps
     final tappedUnit = _findUnitAtPosition(worldBeforeZoom);
     if (tappedUnit != null) {
       _unitSelectionManager.handleUnitTap(tappedUnit);
@@ -297,6 +365,7 @@ class IslandGame extends FlameGame
       return true;
     }
 
+    // PRIORITY 3: Handle empty space tap (movement commands)
     _unitSelectionManager.handleEmptyTap(worldBeforeZoom);
     _notifyUIUpdate();
 
@@ -355,12 +424,25 @@ class IslandGame extends FlameGame
 
   // NEW: Find ship at position
   ShipComponent? _findShipAtPosition(Vector2 worldPosition) {
+    // Sort ships by distance to prioritize closer ones
+    final shipsWithDistance = <MapEntry<ShipComponent, double>>[];
+
     for (final ship in _ships) {
       if (ship.model.isDestroyed) continue;
-      if (ship.containsPoint(worldPosition)) {
-        return ship;
+
+      final distance = ship.position.distanceTo(worldPosition);
+      if (distance <= ship.model.radius + 15) {
+        // Larger tap area for ships
+        shipsWithDistance.add(MapEntry(ship, distance));
       }
     }
+
+    // Return the closest ship if any found
+    if (shipsWithDistance.isNotEmpty) {
+      shipsWithDistance.sort((a, b) => a.value.compareTo(b.value));
+      return shipsWithDistance.first.key;
+    }
+
     return null;
   }
 
@@ -447,13 +529,24 @@ class IslandGame extends FlameGame
   }
 
   UnitComponent? _findUnitAtPosition(Vector2 worldPosition) {
+    // Sort units by distance to prioritize closer ones
+    final unitsWithDistance = <MapEntry<UnitComponent, double>>[];
+
     for (final unit in _units) {
       if (unit.model.health <= 0) continue;
+
       final distance = unit.position.distanceTo(worldPosition);
       if (distance <= unit.model.radius + 10) {
-        return unit;
+        unitsWithDistance.add(MapEntry(unit, distance));
       }
     }
+
+    // Return the closest unit if any found
+    if (unitsWithDistance.isNotEmpty) {
+      unitsWithDistance.sort((a, b) => a.value.compareTo(b.value));
+      return unitsWithDistance.first.key;
+    }
+
     return null;
   }
 
@@ -691,6 +784,52 @@ class IslandGame extends FlameGame
     }
   }
 
+  void _renderSelectedShipPaths(Canvas canvas) {
+    for (final ship in _ships) {
+      if (!ship.model.isSelected || !ship.model.isNavigating) continue;
+      if (ship.model.navigationPath == null ||
+          ship.model.navigationPath!.isEmpty) continue;
+
+      final pathPaint = Paint()
+        ..color = ship.model.team == Team.blue
+            ? Colors.blue.withOpacity(0.6)
+            : Colors.red.withOpacity(0.6)
+        ..strokeWidth = 3 / zoomLevel // Adjust for zoom
+        ..style = PaintingStyle.stroke;
+
+      final waypointPaint = Paint()
+        ..color = ship.model.team == Team.blue
+            ? Colors.blue.withOpacity(0.8)
+            : Colors.red.withOpacity(0.8)
+        ..style = PaintingStyle.fill;
+
+      // Convert world coordinates to screen coordinates and draw path
+      Vector2 currentPos = ship.position;
+      for (int i = 0; i < ship.model.navigationPath!.length; i++) {
+        Vector2 waypoint = ship.model.navigationPath![i];
+
+        Vector2 currentScreen = worldToScreenPosition(currentPos);
+        Vector2 waypointScreen = worldToScreenPosition(waypoint);
+
+        // Draw path line
+        canvas.drawLine(
+          Offset(currentScreen.x, currentScreen.y),
+          Offset(waypointScreen.x, waypointScreen.y),
+          pathPaint,
+        );
+
+        // Draw waypoint marker
+        canvas.drawCircle(
+          Offset(waypointScreen.x, waypointScreen.y),
+          4 / zoomLevel, // Adjust for zoom
+          waypointPaint,
+        );
+
+        currentPos = waypoint;
+      }
+    }
+  }
+
   @override
   void render(Canvas canvas) {
     // Apply zoom
@@ -718,6 +857,9 @@ class IslandGame extends FlameGame
 
     // Render attack range indicators
     _unitSelectionManager.renderAttackRange(canvas);
+
+    // Draw ship navigation paths for selected ships
+    _renderSelectedShipPaths(canvas);
   }
 
   void _drawDestinationMarker(Canvas canvas, Vector2 screenPos) {
