@@ -259,12 +259,13 @@ class IslandGame extends FlameGame
     super.onGameResize(newSize);
 
     if (_isLoaded && _island.isMounted) {
-      // Store old size for position scaling
+      // Store old size for reference
       final oldSize = _island.gameSize.clone();
 
-      // Calculate scale factors
-      final scaleX = newSize.x / oldSize.x;
-      final scaleY = newSize.y / oldSize.y;
+      // Calculate the center offset (how the center moves)
+      final oldCenter = oldSize / 2;
+      final newCenter = newSize / 2;
+      final centerOffset = newCenter - oldCenter;
 
       // Update island size and position
       _island.gameSize = newSize;
@@ -282,43 +283,39 @@ class IslandGame extends FlameGame
         viewH: newSize.y,
       );
 
-      // Update params WITHOUT regenerating the island
-      _island.amplitude = amplitude;
-      _island.wavelength = wavelength;
-      _island.bias = bias;
-      _island.seed = seed;
-      _island.islandRadius = islandRadius;
-      _island.radius = newSize.x * 0.3 * islandRadius;
+      // Update params to trigger full regeneration with new size
+      _island.updateParams(
+        amplitude: amplitude,
+        wavelength: wavelength,
+        bias: bias,
+        seed: seed,
+        islandRadius: islandRadius,
+      );
 
-      // Wait for contours to be recalculated
-      _island.refreshContours().then((_) {
-        // Scale ship positions
+      // Wait for contours to be recalculated before adjusting positions
+      Future.delayed(const Duration(milliseconds: 100), () {
+        // Only adjust positions by the center offset to keep objects in the same world position
+        // This maintains their position relative to the island features
         for (final ship in _ships) {
-          ship.model.position.x *= scaleX;
-          ship.model.position.y *= scaleY;
-          ship.position.x *= scaleX;
-          ship.position.y *= scaleY;
+          ship.model.position += centerOffset;
+          ship.position = ship.model.position.clone();
         }
 
-        // Scale unit positions
+        // Adjust unit positions by center offset
         for (final unit in _units) {
-          unit.model.position.x *= scaleX;
-          unit.model.position.y *= scaleY;
-          unit.position.x *= scaleX;
-          unit.position.y *= scaleY;
+          unit.model.position += centerOffset;
+          unit.position = unit.model.position.clone();
 
-          // Scale target positions if they exist
+          // Also adjust target position if it exists
           if (unit.model.targetPosition != null) {
-            unit.model.targetPosition.x *= scaleX;
-            unit.model.targetPosition.y *= scaleY;
+            unit.model.targetPosition += centerOffset;
           }
         }
 
-        // Scale camera origin
-        cameraOrigin.x *= scaleX;
-        cameraOrigin.y *= scaleY;
+        // Adjust camera by center offset to maintain view
+        cameraOrigin += centerOffset;
 
-        // Clamp camera after resize
+        // Clamp camera to ensure it's within bounds
         clampCamera();
       });
     }
@@ -1045,16 +1042,19 @@ class IslandGame extends FlameGame
       return;
     }
 
-    final unitModels = _units.map((u) => u.model).toList();
-    final hasCaptain = unitModels.any((u) =>
-        u.playerId == playerId && u.type == UnitType.captain && u.health > 0);
+    // Spawn the requested number of units
+    for (int i = 0; i < count && player.unitsRemaining > 0; i++) {
+      final unitModels = _units.map((u) => u.model).toList();
+      final hasCaptain = unitModels.any((u) =>
+          u.playerId == playerId && u.type == UnitType.captain && u.health > 0);
 
-    if (!hasCaptain) {
-      spawnSingleUnit(UnitType.captain, team);
-    } else {
-      final rng = math.Random();
-      spawnSingleUnit(
-          rng.nextBool() ? UnitType.archer : UnitType.swordsman, team);
+      if (!hasCaptain) {
+        spawnSingleUnit(UnitType.captain, team);
+      } else {
+        final rng = math.Random();
+        spawnSingleUnit(
+            rng.nextBool() ? UnitType.archer : UnitType.swordsman, team);
+      }
     }
 
     debugPrint(

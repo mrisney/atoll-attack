@@ -236,6 +236,13 @@ class IslandComponent extends PositionComponent {
     }
   }
 
+  void _updateCoordinateExtractor() {
+    if (shader != null) {
+      _coordinateExtractor =
+          ShaderCoordinateExtractor(shader!, Size(size.x, size.y));
+    }
+  }
+
   void updateParams({
     required double amplitude,
     required double wavelength,
@@ -251,7 +258,9 @@ class IslandComponent extends PositionComponent {
     radius = gameSize.x * 0.3 * islandRadius;
     size = gameSize;
     position = gameSize / 2;
-    // Optionally: updateResolution(gameSize.x, gameSize.y);
+    // Update resolution and coordinate extractor with new size
+    updateResolution(gameSize.x, gameSize.y);
+    _updateCoordinateExtractor();
     _extractShaderContours().then((_) => _buildIslandModel());
   }
 
@@ -462,8 +471,6 @@ class IslandComponent extends PositionComponent {
         islandRadius: islandRadius,
       );
       _shaderContours = extractedContours;
-      debugPrint(
-          'Extracted ${_shaderContours.length} contour levels using shader detection');
     } catch (e) {
       debugPrint('Shader contour extraction failed: $e');
       _shaderContours = {};
