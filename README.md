@@ -76,15 +76,7 @@ Player B: Clicks link → App opens → Joins battle instantly
 
 ## 📋 Next Tasks
 
-### 1. ~~Fix Responsive Layout for Rotation~~ ✅ COMPLETED
-- ✅ Handle landscape/portrait transitions smoothly
-- ✅ Optimize UI element positioning for different orientations
-- ✅ Test on various device sizes
-- ✅ Compact HUD design that allows ship interaction
-- ✅ Single control button with mode switching
-- ✅ Adaptive spawn controls panel without overflow
-
-### 2. Implement Invite-Based Multiplayer
+### 1. Implement Invite-Based Multiplayer
 - **Phase 1**: Deep link infrastructure
   - Set up Firebase Dynamic Links
   - Create invite link generation
@@ -105,13 +97,13 @@ Player B: Clicks link → App opens → Joins battle instantly
   - Preview opponent's island
   - Victory sharing
 
-### 3. Build AI Player System
+### 2. Build AI Player System
 - Behavior tree architecture
 - Multiple difficulty levels
 - Strategic goal planning
 - Tactical unit micro-management
 
-### 4. Polish & Ship
+### 3. Polish & Ship
 - App store assets
 - Tutorial system
 - Sound effects and music
