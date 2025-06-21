@@ -37,10 +37,10 @@ Atoll Attack is a mobile-first RTS game featuring:
 - ✅ Responsive UI scaling
 - ✅ Ship-based unit deployment system
 - ✅ **Responsive layout for device rotation** *(Completed!)*
-  - Smooth landscape/portrait transitions
-  - Optimized UI positioning for all orientations
-  - Compact HUD that doesn't interfere with gameplay
-  - Adaptive controls panel with scroll support
+- ✅ **Deep link infrastructure & Join Screen (Phase 1)**
+  - Asset links & universal links configured in Firebase Hosting
+  - Cloud Function redirect endpoint at `/i/{code}`
+  - App Links handling in Flutter via `app_links` package
 
 ## 🚀 Planned Multiplayer System
 
@@ -67,13 +67,13 @@ Player B: Clicks link → App opens → Joins battle instantly
 
 #### Technical Approach:
 
-- **Custom App Links & Universal Links** hosted on `links.atoll-attack.com` via Firebase Hosting and Cloud Functions (no Firebase Dynamic Links).
-- **Serverless redirect endpoint** at `/i/{code}` to lookup invite in Firestore.
-- **Static .well-known JSON** files (`assetlinks.json`, `apple-app-site-association`) for OS deep-link verification.
-- **WebSocket connections** for real-time gameplay (2-4 players max).
-- **Game codes** for easy sharing (e.g., "ISLAND-X7B2").
-- **7-day expiration** on game invites.
-- **Rejoin support** for interrupted games.
+- **Custom App Links & Universal Links** hosted on `link.atoll-attack.com` via Firebase Hosting and Cloud Functions
+- **Serverless redirect endpoint** at `/i/{code}` to lookup invite in Firestore
+- **Static .well-known JSON** files (`assetlinks.json`, `apple-app-site-association`) for OS deep-link verification
+- **WebRTC peer-to-peer & WebSocket** connections for real-time gameplay (2-4 players max)
+- **Game codes** for easy sharing (e.g., "ISLAND-X7B2")
+- **7-day expiration** on game invites
+- **Rejoin support** for interrupted games
 
 #### Benefits:
 
@@ -85,50 +85,29 @@ Player B: Clicks link → App opens → Joins battle instantly
 
 ## 📋 Next Tasks
 
-### 1. Implement Invite-Based Multiplayer
+1. **Phase 2: Game Session Management**
 
-Phase 1: Deep link infrastructure
+   - Create game rooms with unique codes
+   - Implement waiting/active/completed states
+   - Add rejoin functionality
 
-- Configure App Links (Android) and Universal Links (iOS) by hosting association files on Firebase Hosting
-- Implement Firebase Cloud Function redirect endpoint at `/i/{code}`
-- Handle incoming deep links in the app’s join flow
+2. **Phase 3: Real-time Synchronization**
 
-Phase 2: Game session management
+   - WebSocket server for game commands
+   - Client-side prediction & smoothing
+   - Server reconciliation logic
 
-- Create game rooms with unique codes
-- Implement waiting/active/completed states
-- Add rejoin functionality
+3. **Phase 4: Social Features & Polish**
 
-Phase 3: Real-time synchronization
-
-- WebSocket server for game commands
-- Client-side prediction
-- Server reconciliation
-
-Phase 4: Social features
-
-- Show who invited you
-- Preview opponent's island
-- Victory sharing
-
-### 2. Build AI Player System
-
-- Behavior tree architecture
-- Multiple difficulty levels
-- Strategic goal planning
-- Tactical unit micro-management
-
-### 3. Polish & Ship
-
-- App store assets
-- Tutorial system
-- Sound effects and music
-- Performance optimization
+   - Show who invited you and preview opponent's island
+   - Victory sharing & replay
+   - App store assets, tutorial, SFX & music
+   - Performance optimization & scaling
 
 ## 🛠️ Technical Stack
 
 - **Frontend**: Flutter + Flame Engine
-- **Multiplayer**: WebSockets + Firebase
+- **Multiplayer**: WebSockets / WebRTC + Firebase
 - **Deep Links**: Custom App Links & Universal Links via Firebase Hosting + Cloud Functions
 - **Backend**: Firebase Firestore + Cloud Functions
 - **Analytics**: Firebase Analytics
@@ -136,7 +115,7 @@ Phase 4: Social features
 
 ## 🎯 Design Philosophy
 
-Atoll Attack is designed as a "snackable" RTS - quick matches you can play with friends during a coffee break. The invite system removes friction: no accounts, no lobbies, just "tap link and play." Every island is unique, making each battle memorable and shareable.
+Atoll Attack is designed as a "snackable" RTS—quick matches you can play with friends during a coffee break. The invite system removes friction: no accounts, no lobbies, just "tap link and play." Every island is unique, making each battle memorable and shareable.
 
 ## 🔧 Development Setup
 
