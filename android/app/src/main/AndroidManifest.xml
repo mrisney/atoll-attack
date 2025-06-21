@@ -29,7 +29,7 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data
             android:scheme="https"
-            android:host="links.atoll-attack.com"
+            android:host="link.atoll-attack.com"
             android:pathPrefix="/join"/>
         </intent-filter>
 
