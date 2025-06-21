@@ -1,12 +1,11 @@
 # Atoll Attack - Island Conquest RTS
 
-<img src="screenshot.png" alt="Atoll Attack Screenshot" width="300">
-
 A real-time strategy game where players battle for control of procedurally generated islands. Command your units, capture strategic positions, and plant your flag at the island's apex to claim victory!
 
 ## 🎮 Game Overview
 
 Atoll Attack is a mobile-first RTS game featuring:
+
 - **Procedurally generated islands** with unique terrain and elevation
 - **Three unit types**: Captains (flag bearers), Archers (ranged), and Swordsmen (melee)
 - **Strategic gameplay**: Use terrain elevation for tactical advantages
@@ -16,11 +15,13 @@ Atoll Attack is a mobile-first RTS game featuring:
 ## 🏗️ Current Architecture
 
 ### Player System
+
 - Migrated from Team enum to flexible Player system
 - Supports multiple players with unique IDs
 - Tracks unit spawning and resource limits per player
 
 ### Core Components
+
 - **UnitModel**: Individual unit data with player ownership
 - **ShipComponent**: Naval units for unit deployment
 - **IslandComponent**: Procedural terrain generation with GPU shaders
@@ -28,6 +29,7 @@ Atoll Attack is a mobile-first RTS game featuring:
 - **Snapshot System**: Full game state serialization
 
 ### Key Features Implemented
+
 - ✅ Real-time unit movement and combat
 - ✅ Drag-to-select unit groups
 - ✅ Procedural island generation with elevation-based gameplay
@@ -43,17 +45,20 @@ Atoll Attack is a mobile-first RTS game featuring:
 ## 🚀 Planned Multiplayer System
 
 ### Invite-Based Multiplayer (No Lobby Required)
+
 Instead of traditional matchmaking, Atoll Attack will use a friend-invite system perfect for mobile gaming:
 
 #### How It Works:
+
 1. **Create Your Island**: Generate a unique battlefield with your preferred settings
 2. **Challenge a Friend**: Send an invite link via SMS, WhatsApp, or any messaging app
-3. **Smart Deep Links**: 
+3. **Smart Deep Links**:
    - If they have the game → Opens directly to your battle
    - If they don't → Redirects to App Store/Google Play with preview
 4. **Async-Friendly**: Start playing vs AI while waiting for your friend to join
 
 #### Example Flow:
+
 ```
 Player A: Creates island → Taps "Invite Friend" → Shares link
 Message: "🏝️ Join me in Atoll Attack! I've created an island battlefield. Code: ISLAND-X7B2"
@@ -61,13 +66,17 @@ Player B: Clicks link → App opens → Joins battle instantly
 ```
 
 #### Technical Approach:
-- **Firebase Dynamic Links** for cross-platform deep linking
-- **WebSocket connections** for real-time gameplay (2-4 players max)
-- **Game codes** for easy sharing (e.g., "ISLAND-X7B2")
-- **7-day expiration** on game invites
-- **Rejoin support** for interrupted games
+
+- **Custom App Links & Universal Links** hosted on `links.atoll-attack.com` via Firebase Hosting and Cloud Functions (no Firebase Dynamic Links).
+- **Serverless redirect endpoint** at `/i/{code}` to lookup invite in Firestore.
+- **Static .well-known JSON** files (`assetlinks.json`, `apple-app-site-association`) for OS deep-link verification.
+- **WebSocket connections** for real-time gameplay (2-4 players max).
+- **Game codes** for easy sharing (e.g., "ISLAND-X7B2").
+- **7-day expiration** on game invites.
+- **Rejoin support** for interrupted games.
 
 #### Benefits:
+
 - No account/login required
 - Personal invites increase engagement
 - Natural viral growth through sharing
@@ -77,33 +86,40 @@ Player B: Clicks link → App opens → Joins battle instantly
 ## 📋 Next Tasks
 
 ### 1. Implement Invite-Based Multiplayer
-- **Phase 1**: Deep link infrastructure
-  - Set up Firebase Dynamic Links
-  - Create invite link generation
-  - Handle incoming links
-  
-- **Phase 2**: Game session management
-  - Create game rooms with unique codes
-  - Implement waiting/active/completed states
-  - Add rejoin functionality
-  
-- **Phase 3**: Real-time synchronization
-  - WebSocket server for game commands
-  - Client-side prediction
-  - Server reconciliation
-  
-- **Phase 4**: Social features
-  - Show who invited you
-  - Preview opponent's island
-  - Victory sharing
+
+Phase 1: Deep link infrastructure
+
+- Configure App Links (Android) and Universal Links (iOS) by hosting association files on Firebase Hosting
+- Implement Firebase Cloud Function redirect endpoint at `/i/{code}`
+- Handle incoming deep links in the app’s join flow
+
+Phase 2: Game session management
+
+- Create game rooms with unique codes
+- Implement waiting/active/completed states
+- Add rejoin functionality
+
+Phase 3: Real-time synchronization
+
+- WebSocket server for game commands
+- Client-side prediction
+- Server reconciliation
+
+Phase 4: Social features
+
+- Show who invited you
+- Preview opponent's island
+- Victory sharing
 
 ### 2. Build AI Player System
+
 - Behavior tree architecture
 - Multiple difficulty levels
 - Strategic goal planning
 - Tactical unit micro-management
 
 ### 3. Polish & Ship
+
 - App store assets
 - Tutorial system
 - Sound effects and music
@@ -113,7 +129,7 @@ Player B: Clicks link → App opens → Joins battle instantly
 
 - **Frontend**: Flutter + Flame Engine
 - **Multiplayer**: WebSockets + Firebase
-- **Deep Links**: Firebase Dynamic Links / Branch.io
+- **Deep Links**: Custom App Links & Universal Links via Firebase Hosting + Cloud Functions
 - **Backend**: Firebase Firestore + Cloud Functions
 - **Analytics**: Firebase Analytics
 - **Crash Reporting**: Firebase Crashlytics
@@ -154,3 +170,4 @@ MIT License - see [LICENSE](LICENSE) file for details
 ---
 
 *Atoll Attack - Where islands become battlefields and friends become rivals!*
+

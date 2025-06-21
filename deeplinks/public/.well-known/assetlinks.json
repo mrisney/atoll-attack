@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.risney.games.atoll",
+      "sha256_cert_fingerprints": [
+        "D2:BC:06:AB:30:79:DA:B6:F1:A5:0D:65:27:EB:A9:9C:02:17:5D:29:CB:B8:F6:2E:B7:E8:46:39:5C:31:8D:66"
+      ]
+    }
+  }
+]
