@@ -115,15 +115,22 @@ class ShipModel {
 
   Vector2? getDeploymentPosition() {
     if (!isAtShore) return null;
-    for (int angle = 0; angle < 360; angle += 30) {
-      double rad = angle * math.pi / 180;
-      Vector2 deployPos = position +
-          Vector2(
-            math.cos(rad) * (radius + 10),
-            math.sin(rad) * (radius + 10),
-          );
-      if (isOnLandCallback != null && isOnLandCallback!(deployPos)) {
-        return deployPos;
+
+    // Try multiple distances to find land
+    for (double distance = radius + 15;
+        distance <= radius + 60;
+        distance += 5) {
+      // Check more angles for better coverage
+      for (int angle = 0; angle < 360; angle += 15) {
+        double rad = angle * math.pi / 180;
+        Vector2 deployPos = position +
+            Vector2(
+              math.cos(rad) * distance,
+              math.sin(rad) * distance,
+            );
+        if (isOnLandCallback != null && isOnLandCallback!(deployPos)) {
+          return deployPos;
+        }
       }
     }
     return null;

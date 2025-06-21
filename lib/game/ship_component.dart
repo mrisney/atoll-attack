@@ -78,54 +78,30 @@ class ShipComponent extends PositionComponent with HasGameRef<IslandGame> {
   bool _isNearShore(Vector2 pos) {
     if (gameRef.isOnLand == null) return false;
 
-    // Multiple detection methods for better reliability
-    const double shoreBuffer = 35.0; // Increased detection range
-    const int checkPoints = 16; // More check points for better coverage
+    // More aggressive shore detection, especially helpful for northern coastlines
+    // Start checking very close and expand outward
+    for (double radius = 5.0; radius <= 50.0; radius += 3.0) {
+      int numChecks = math.max(12, (radius / 3).round() * 4);
 
-    // Method 1: Check points around the ship in a circle
-    for (int angle = 0; angle < 360; angle += (360 ~/ checkPoints)) {
-      double rad = angle * math.pi / 180;
-      Vector2 checkPos = pos +
-          Vector2(
-            math.cos(rad) * shoreBuffer,
-            math.sin(rad) * shoreBuffer,
-          );
+      for (int i = 0; i < numChecks; i++) {
+        double angle = (i / numChecks) * 2 * math.pi;
+        Vector2 checkPos = pos +
+            Vector2(
+              math.cos(angle) * radius,
+              math.sin(angle) * radius,
+            );
 
-      if (gameRef.isOnLand(checkPos)) {
-        return true;
+        if (gameRef.isOnLand(checkPos)) {
+          return true;
+        }
       }
     }
 
-    // Method 2: Check closer points with smaller radius
-    const double closeBuffer = 20.0;
-    for (int angle = 0; angle < 360; angle += 45) {
-      double rad = angle * math.pi / 180;
-      Vector2 checkPos = pos +
-          Vector2(
-            math.cos(rad) * closeBuffer,
-            math.sin(rad) * closeBuffer,
-          );
-
-      if (gameRef.isOnLand(checkPos)) {
-        return true;
-      }
-    }
-
-    // Method 3: Check multiple distances in cardinal directions
-    List<Vector2> directions = [
-      Vector2(1, 0), // East
-      Vector2(-1, 0), // West
-      Vector2(0, 1), // South
-      Vector2(0, -1), // North
-      Vector2(1, 1), // Southeast
-      Vector2(-1, 1), // Southwest
-      Vector2(1, -1), // Northeast
-      Vector2(-1, -1), // Northwest
-    ];
-
-    for (Vector2 dir in directions) {
-      for (double distance = 15.0; distance <= 40.0; distance += 5.0) {
-        Vector2 checkPos = pos + dir * distance;
+    // Additional check specifically for north/south approaches
+    // This helps with ships approaching from water
+    for (double y = -50; y <= 50; y += 5) {
+      for (double x = -20; x <= 20; x += 5) {
+        Vector2 checkPos = pos + Vector2(x, y);
         if (gameRef.isOnLand(checkPos)) {
           return true;
         }

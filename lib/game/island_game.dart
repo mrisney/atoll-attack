@@ -172,8 +172,8 @@ class IslandGame extends FlameGame
     final northPoint = validCoastline.reduce((a, b) => a.dy < b.dy ? a : b);
     final southPoint = validCoastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
-    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 60);
-    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 60);
+    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 25);
+    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 40);
 
     _spawnShip(Team.blue, blueShipPos);
     _spawnShip(Team.red, redShipPos);
