@@ -22,8 +22,8 @@ class GameControlsPanel extends ConsumerWidget {
       child: Container(
         constraints: BoxConstraints(
           maxWidth: isLandscape ? 600 : 350,
-          minWidth: 320,
-          maxHeight: isLandscape ? 400 : 220,
+          minWidth: 280,
+          maxHeight: isLandscape ? screenSize.height * 0.6 : 220,
         ),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
@@ -33,13 +33,10 @@ class GameControlsPanel extends ConsumerWidget {
             width: 1,
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: 12,
-            horizontal: 16,
-          ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           child: isLandscape
-              ? _buildLandscapeLayout(context, unitCounts, game)
+              ? _buildCompactLandscapeLayout(context, unitCounts, game)
               : _buildPortraitLayout(context, unitCounts, game),
         ),
       ),
@@ -51,106 +48,100 @@ class GameControlsPanel extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header with close button
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Spawn Units',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70, size: 16),
-                onPressed: onClose,
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-        ),
-
+        // Header
+        _buildHeader(),
         const SizedBox(height: 8),
-
-        // Compact unit count display
+        // Unit counts
         _buildCompactUnitCountDisplay(unitCounts),
-
         const SizedBox(height: 8),
-
-        // Spawn buttons in horizontal layout
-        _buildResponsiveSpawnButtons(unitCounts, game),
-
+        // Spawn buttons
+        _buildPortraitSpawnButtons(unitCounts, game),
         const SizedBox(height: 4),
-
         // Instructions
-        Text(
-          'Drag to select • Click to move • Tap to spawn',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 9,
-          ),
-          textAlign: TextAlign.center,
-        ),
+        _buildInstructions(9),
       ],
     );
   }
 
-  Widget _buildLandscapeLayout(
+  Widget _buildCompactLandscapeLayout(
       BuildContext context, Map<String, int> unitCounts, game) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header with close button
+        // Header with counts
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Spawn Units',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                onPressed: onClose,
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
-            ),
+            Expanded(child: _buildHeader()),
+            _buildLandscapeUnitCounts(unitCounts),
           ],
         ),
-
-        const SizedBox(height: 12),
-
-        // Extended unit count display for landscape
-        _buildExtendedUnitCountDisplay(unitCounts),
-
-        const SizedBox(height: 16),
-
-        // Larger spawn buttons for landscape
-        _buildLandscapeSpawnButtons(unitCounts, game),
-
         const SizedBox(height: 8),
+        // Horizontal spawn buttons
+        _buildLandscapeSpawnButtons(unitCounts, game),
+        const SizedBox(height: 4),
+        _buildInstructions(10),
+      ],
+    );
+  }
 
-        // Instructions
-        Text(
-          'Drag to select units • Click to move selected units • Tap buttons to spawn units',
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Spawn Units',
           style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 11,
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
           ),
-          textAlign: TextAlign.center,
+        ),
+        if (onClose != null)
+          GestureDetector(
+            onTap: onClose,
+            child: const Icon(Icons.close, color: Colors.white70, size: 18),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLandscapeUnitCounts(Map<String, int> unitCounts) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildMiniTeamCount('B', Colors.blue, unitCounts, true),
+          const SizedBox(width: 12),
+          _buildMiniTeamCount('R', Colors.red, unitCounts, false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniTeamCount(
+      String label, Color color, Map<String, int> unitCounts, bool isBlue) {
+    String prefix = isBlue ? 'blue' : 'red';
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '${unitCounts['${prefix}Remaining']}',
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ],
     );
@@ -173,35 +164,6 @@ class GameControlsPanel extends ConsumerWidget {
             color: Colors.white.withOpacity(0.3),
           ),
           _buildTeamInfo('Red', unitCounts, Colors.red, false),
-          Container(
-            height: 35,
-            width: 1,
-            color: Colors.white.withOpacity(0.3),
-          ),
-          _buildCompactLegend(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExtendedUnitCountDisplay(Map<String, int> unitCounts) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-              child: _buildDetailedTeamInfo(
-                  'Blue Team', unitCounts, Colors.blue, true)),
-          const SizedBox(width: 20),
-          Container(height: 60, width: 1, color: Colors.white.withOpacity(0.3)),
-          const SizedBox(width: 20),
-          Expanded(
-              child: _buildDetailedTeamInfo(
-                  'Red Team', unitCounts, Colors.red, false)),
         ],
       ),
     );
@@ -211,7 +173,6 @@ class GameControlsPanel extends ConsumerWidget {
       String team, Map<String, int> unitCounts, Color color, bool isBlue) {
     String prefix = isBlue ? 'blue' : 'red';
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
@@ -220,10 +181,7 @@ class GameControlsPanel extends ConsumerWidget {
             Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
             const SizedBox(width: 3),
             Text(
@@ -238,11 +196,12 @@ class GameControlsPanel extends ConsumerWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          'C:${unitCounts['${prefix}CaptainsRemaining']} A:${unitCounts['${prefix}ArchersRemaining']} S:${unitCounts['${prefix}SwordsmenRemaining']}',
+          'C:${unitCounts['${prefix}CaptainsRemaining']} '
+          'A:${unitCounts['${prefix}ArchersRemaining']} '
+          'S:${unitCounts['${prefix}SwordsmenRemaining']}',
           style: const TextStyle(
             color: Colors.white70,
             fontSize: 8,
-            fontFamily: 'monospace',
           ),
         ),
         Text(
@@ -257,150 +216,21 @@ class GameControlsPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildDetailedTeamInfo(
-      String teamName, Map<String, int> unitCounts, Color color, bool isBlue) {
-    String prefix = isBlue ? 'blue' : 'red';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              teamName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Captains:', style: _labelStyle),
-            Text('${unitCounts['${prefix}CaptainsRemaining']}',
-                style: _valueStyle),
-          ],
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Archers:', style: _labelStyle),
-            Text('${unitCounts['${prefix}ArchersRemaining']}',
-                style: _valueStyle),
-          ],
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Swordsmen:', style: _labelStyle),
-            Text('${unitCounts['${prefix}SwordsmenRemaining']}',
-                style: _valueStyle),
-          ],
-        ),
-      ],
-    );
-  }
-
-  TextStyle get _labelStyle =>
-      const TextStyle(color: Colors.white70, fontSize: 12);
-
-  TextStyle get _valueStyle => const TextStyle(
-      color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600);
-
-  Widget _buildCompactLegend() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          'Legend',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        Text(
-          'C=Captain($kMaxCaptainsPerTeam)',
-          style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 7,
-          ),
-        ),
-        Text(
-          'A=Archer($kMaxArchersPerTeam)',
-          style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 7,
-          ),
-        ),
-        Text(
-          'S=Swords($kMaxSwordsmenPerTeam)',
-          style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 7,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildResponsiveSpawnButtons(Map<String, int> unitCounts, game) {
+  Widget _buildPortraitSpawnButtons(Map<String, int> unitCounts, game) {
     return Row(
       children: [
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Blue Team:',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+              Text(
+                'Blue',
+                style: TextStyle(color: Colors.blue.shade400, fontSize: 10),
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildCompactUnitButton(
-                    'C',
-                    Icons.star,
-                    Colors.blue.shade700,
-                    () => game.spawnSingleUnit(UnitType.captain, Team.blue),
-                    unitCounts['blueCaptainsRemaining']! > 0,
-                    '${unitCounts['blueCaptainsRemaining']}',
-                  ),
-                  _buildCompactUnitButton(
-                    'A',
-                    Icons.sports_esports,
-                    Colors.blue.shade500,
-                    () => game.spawnSingleUnit(UnitType.archer, Team.blue),
-                    unitCounts['blueArchersRemaining']! > 0,
-                    '${unitCounts['blueArchersRemaining']}',
-                  ),
-                  _buildCompactUnitButton(
-                    'S',
-                    Icons.shield,
-                    Colors.blue.shade300,
-                    () => game.spawnSingleUnit(UnitType.swordsman, Team.blue),
-                    unitCounts['blueSwordsmenRemaining']! > 0,
-                    '${unitCounts['blueSwordsmenRemaining']}',
-                  ),
-                ],
+                children: _buildUnitButtons(unitCounts, game, Team.blue, false),
               ),
             ],
           ),
@@ -410,43 +240,14 @@ class GameControlsPanel extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Red Team:',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+              Text(
+                'Red',
+                style: TextStyle(color: Colors.red.shade400, fontSize: 10),
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildCompactUnitButton(
-                    'C',
-                    Icons.star,
-                    Colors.red.shade700,
-                    () => game.spawnSingleUnit(UnitType.captain, Team.red),
-                    unitCounts['redCaptainsRemaining']! > 0,
-                    '${unitCounts['redCaptainsRemaining']}',
-                  ),
-                  _buildCompactUnitButton(
-                    'A',
-                    Icons.sports_esports,
-                    Colors.red.shade500,
-                    () => game.spawnSingleUnit(UnitType.archer, Team.red),
-                    unitCounts['redArchersRemaining']! > 0,
-                    '${unitCounts['redArchersRemaining']}',
-                  ),
-                  _buildCompactUnitButton(
-                    'S',
-                    Icons.shield,
-                    Colors.red.shade300,
-                    () => game.spawnSingleUnit(UnitType.swordsman, Team.red),
-                    unitCounts['redSwordsmenRemaining']! > 0,
-                    '${unitCounts['redSwordsmenRemaining']}',
-                  ),
-                ],
+                children: _buildUnitButtons(unitCounts, game, Team.red, false),
               ),
             ],
           ),
@@ -458,121 +259,88 @@ class GameControlsPanel extends ConsumerWidget {
   Widget _buildLandscapeSpawnButtons(Map<String, int> unitCounts, game) {
     return Row(
       children: [
+        // Blue team
         Expanded(
-          child: Column(
-            children: [
-              const Text(
-                'Blue Team',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildLargeUnitButton(
-                    'Captain',
-                    Icons.star,
-                    Colors.blue.shade700,
-                    () => game.spawnSingleUnit(UnitType.captain, Team.blue),
-                    unitCounts['blueCaptainsRemaining']! > 0,
-                    '${unitCounts['blueCaptainsRemaining']}',
-                  ),
-                  _buildLargeUnitButton(
-                    'Archer',
-                    Icons.sports_esports,
-                    Colors.blue.shade500,
-                    () => game.spawnSingleUnit(UnitType.archer, Team.blue),
-                    unitCounts['blueArchersRemaining']! > 0,
-                    '${unitCounts['blueArchersRemaining']}',
-                  ),
-                  _buildLargeUnitButton(
-                    'Swordsman',
-                    Icons.shield,
-                    Colors.blue.shade300,
-                    () => game.spawnSingleUnit(UnitType.swordsman, Team.blue),
-                    unitCounts['blueSwordsmenRemaining']! > 0,
-                    '${unitCounts['blueSwordsmenRemaining']}',
-                  ),
-                ],
-              ),
-            ],
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _buildUnitButtons(unitCounts, game, Team.blue, true),
+            ),
           ),
         ),
-        const SizedBox(width: 24),
+        const SizedBox(width: 8),
+        // Red team
         Expanded(
-          child: Column(
-            children: [
-              const Text(
-                'Red Team',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildLargeUnitButton(
-                    'Captain',
-                    Icons.star,
-                    Colors.red.shade700,
-                    () => game.spawnSingleUnit(UnitType.captain, Team.red),
-                    unitCounts['redCaptainsRemaining']! > 0,
-                    '${unitCounts['redCaptainsRemaining']}',
-                  ),
-                  _buildLargeUnitButton(
-                    'Archer',
-                    Icons.sports_esports,
-                    Colors.red.shade500,
-                    () => game.spawnSingleUnit(UnitType.archer, Team.red),
-                    unitCounts['redArchersRemaining']! > 0,
-                    '${unitCounts['redArchersRemaining']}',
-                  ),
-                  _buildLargeUnitButton(
-                    'Swordsman',
-                    Icons.shield,
-                    Colors.red.shade300,
-                    () => game.spawnSingleUnit(UnitType.swordsman, Team.red),
-                    unitCounts['redSwordsmenRemaining']! > 0,
-                    '${unitCounts['redSwordsmenRemaining']}',
-                  ),
-                ],
-              ),
-            ],
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _buildUnitButtons(unitCounts, game, Team.red, true),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCompactUnitButton(
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onPressed,
-    bool enabled,
-    String count,
-  ) {
+  List<Widget> _buildUnitButtons(
+      Map<String, int> unitCounts, game, Team team, bool isLandscape) {
+    final prefix = team == Team.blue ? 'blue' : 'red';
+    final baseColor = team == Team.blue ? Colors.blue : Colors.red;
+
+    return [
+      _buildCompactButton(
+        'C',
+        Icons.star,
+        baseColor.shade700,
+        () => game.spawnSingleUnit(UnitType.captain, team),
+        unitCounts['${prefix}CaptainsRemaining']! > 0,
+        unitCounts['${prefix}CaptainsRemaining']!,
+        isLandscape,
+      ),
+      _buildCompactButton(
+        'A',
+        Icons.sports_esports,
+        baseColor.shade500,
+        () => game.spawnSingleUnit(UnitType.archer, team),
+        unitCounts['${prefix}ArchersRemaining']! > 0,
+        unitCounts['${prefix}ArchersRemaining']!,
+        isLandscape,
+      ),
+      _buildCompactButton(
+        'S',
+        Icons.shield,
+        baseColor.shade300,
+        () => game.spawnSingleUnit(UnitType.swordsman, team),
+        unitCounts['${prefix}SwordsmenRemaining']! > 0,
+        unitCounts['${prefix}SwordsmenRemaining']!,
+        isLandscape,
+      ),
+    ];
+  }
+
+  Widget _buildCompactButton(String label, IconData icon, Color color,
+      VoidCallback onPressed, bool enabled, int count, bool isLandscape) {
+    final size = isLandscape ? 50.0 : 45.0;
+    final iconSize = isLandscape ? 14.0 : 12.0;
+
     return SizedBox(
-      width: 45,
-      height: 40,
+      width: size,
+      height: size,
       child: ElevatedButton(
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: enabled ? color : Colors.grey.shade600,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 7,
-          ),
-          elevation: enabled ? 2 : 0,
+          padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(6),
           ),
@@ -580,22 +348,22 @@ class GameControlsPanel extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 10),
-            Text(label, style: const TextStyle(fontSize: 7)),
+            Icon(icon, size: iconSize, color: Colors.white),
+            Text(label,
+                style: TextStyle(
+                    fontSize: isLandscape ? 9 : 8, color: Colors.white)),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
               decoration: BoxDecoration(
-                color: enabled
-                    ? Colors.black.withOpacity(0.3)
-                    : Colors.grey.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(4),
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(3),
               ),
               child: Text(
-                count,
-                style: const TextStyle(
-                  fontSize: 7,
+                '$count',
+                style: TextStyle(
+                  fontSize: isLandscape ? 8 : 7,
                   fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace',
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -605,57 +373,14 @@ class GameControlsPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildLargeUnitButton(
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onPressed,
-    bool enabled,
-    String count,
-  ) {
-    return SizedBox(
-      width: 80,
-      height: 60,
-      child: ElevatedButton(
-        onPressed: enabled ? onPressed : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: enabled ? color : Colors.grey.shade600,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 10,
-          ),
-          elevation: enabled ? 3 : 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 16),
-            Text(label, style: const TextStyle(fontSize: 10)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: enabled
-                    ? Colors.black.withOpacity(0.3)
-                    : Colors.grey.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                count,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-          ],
-        ),
+  Widget _buildInstructions(double fontSize) {
+    return Text(
+      'Drag to select • Tap to move • Tap buttons to spawn',
+      style: TextStyle(
+        color: Colors.white.withOpacity(0.6),
+        fontSize: fontSize,
       ),
+      textAlign: TextAlign.center,
     );
   }
 }
