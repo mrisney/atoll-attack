@@ -61,6 +61,13 @@ class UnitModel {
   double combatEngagementRange = 25.0;
   bool wasPlayerInitiated = false;
 
+  // Ship boarding and healing
+  String? targetShipId;
+  bool isSeekingShip = false;
+  bool isBoarded = false;
+  double healingRate = 10.0; // Health per second while on ship
+  double lowHealthThreshold = 0.5; // 50% health triggers retreat
+
   // Flag raising properties (for captains)
   bool isRaisingFlag = false;
   double flagRaiseProgress = 0.0;
@@ -197,6 +204,35 @@ class UnitModel {
       final bonus = type == enemy.type ? 2.0 : 1.0;
       health = math.min(maxHealth + bonus, maxHealth * 1.1);
     }
+  }
+
+  void setTargetShip(String shipId) {
+    targetShipId = shipId;
+    isSeekingShip = true;
+    // Clear combat targets when seeking ship
+    targetEnemy = null;
+    isInCombat = false;
+    state = UnitState.moving;
+  }
+
+  void boardShip() {
+    isBoarded = true;
+    isSeekingShip = false;
+    state = UnitState.idle;
+    velocity = Vector2.zero();
+  }
+
+  void disembarkShip() {
+    isBoarded = false;
+    targetShipId = null;
+  }
+
+  bool shouldSeekShip() {
+    // Auto-seek ship if health is low and not player-commanded elsewhere
+    return health / maxHealth <= lowHealthThreshold &&
+        !isInCombat &&
+        !forceRedirect &&
+        targetShipId == null;
   }
 
   bool shouldEngageInCombat(List<UnitModel> allUnits) {
@@ -375,6 +411,12 @@ class UnitModel {
       {double? elevationAtPosition}) {
     if (health <= 0) return;
 
+    // Skip most updates if boarded on ship
+    if (isBoarded) {
+      // Only handle healing
+      return;
+    }
+
     double currentTime = DateTime.now().millisecondsSinceEpoch / 1000.0;
 
     if (type == UnitType.captain) {
@@ -393,7 +435,14 @@ class UnitModel {
       }
     }
 
-    if (shouldEngageInCombat(units)) {
+    // Check if should auto-seek ship when health is low
+    if (shouldSeekShip() && !isSeekingShip) {
+      // Auto-retreat to ship behavior can be added here
+      // For now, only player-initiated ship seeking
+    }
+
+    // Skip combat if seeking ship for healing
+    if (!isSeekingShip && shouldEngageInCombat(units)) {
       processCombat(dt);
       if (isInCombat) {
         return;

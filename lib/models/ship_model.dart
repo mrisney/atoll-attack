@@ -37,6 +37,10 @@ class ShipModel {
   List<UnitType> cargo = [];
   int maxCargo = 15;
 
+  // Boarding units (units returning for healing)
+  List<String> boardedUnitIds = [];
+  int maxBoardingCapacity = 5; // Separate from cargo capacity
+
   // Movement state
   bool hasSail = true;
   bool usingPaddles = false;
@@ -89,6 +93,46 @@ class ShipModel {
 
   bool canDeployUnits() {
     return isAtShore && cargo.isNotEmpty && health > 0;
+  }
+
+  bool canBoardUnit() {
+    return isAtShore &&
+        boardedUnitIds.length < maxBoardingCapacity &&
+        health > 0;
+  }
+
+  void boardUnit(String unitId) {
+    if (!boardedUnitIds.contains(unitId) && canBoardUnit()) {
+      boardedUnitIds.add(unitId);
+    }
+  }
+
+  void disembarkUnit(String unitId) {
+    boardedUnitIds.remove(unitId);
+  }
+
+  Vector2? getBoardingPosition() {
+    // Return a position near the ship for units to target
+    if (!isAtShore) return null;
+
+    // Find a spot near the ship but on land
+    for (double angle = 0; angle < 360; angle += 30) {
+      double rad = angle * math.pi / 180;
+      for (double distance = radius + 10;
+          distance <= radius + 30;
+          distance += 5) {
+        Vector2 boardingPos = position +
+            Vector2(
+              math.cos(rad) * distance,
+              math.sin(rad) * distance,
+            );
+
+        if (isOnLandCallback != null && isOnLandCallback!(boardingPos)) {
+          return boardingPos;
+        }
+      }
+    }
+    return null;
   }
 
   UnitType? deployUnit(UnitType requestedType) {
