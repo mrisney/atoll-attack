@@ -194,7 +194,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     try {
       // Skip rendering if boarded on ship
       if (model.isBoarded) return;
-      
+
       // Apply death animation transformations
       if (_isPlayingDeathAnimation) {
         canvas.save();
@@ -241,7 +241,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             !model.hasPlantedFlag) {
           _renderFlagRaiseIndicator(canvas);
         }
-        
+
         // Render ship seeking indicator
         if (model.isSeekingShip) {
           _renderShipSeekingIndicator(canvas);
@@ -372,7 +372,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     if (_isVictoryAnimation) {
       _renderVictoryEffect(canvas);
     }
-    
+
     // Draw healing effects
     if (_isHealingAnimation) {
       _renderHealingEffect(canvas);
@@ -769,16 +769,17 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     if (model.isSeekingShip && model.targetShipId != null) {
       _updateShipSeeking(dt);
     }
-    
+
     // Handle healing while boarded
     if (model.isBoarded && model.health < model.maxHealth) {
-      model.health = math.min(model.health + model.healingRate * dt, model.maxHealth);
-      
+      model.health =
+          math.min(model.health + model.healingRate * dt, model.maxHealth);
+
       // Play healing animation
       if (!_isHealingAnimation) {
         playHealingAnimation();
       }
-      
+
       // Disembark when fully healed
       if (model.health >= model.maxHealth) {
         _disembarkFromShip();
@@ -853,7 +854,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         _victoryScale = 1.0;
       }
     }
-    
+
     // Update healing animation
     if (_isHealingAnimation) {
       _healingAnimationTimer += dt;
@@ -922,14 +923,14 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       (ship) => ship.model.id == model.targetShipId,
       orElse: () => ships.first, // Fallback, shouldn't happen
     );
-    
+
     if (targetShip.model.id != model.targetShipId) {
       // Ship not found, stop seeking
       model.targetShipId = null;
       model.isSeekingShip = false;
       return;
     }
-    
+
     // Check if we're close enough to board
     final distance = position.distanceTo(targetShip.position);
     if (distance < targetShip.model.radius + 20) {
@@ -937,12 +938,10 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       if (targetShip.model.canBoardUnit()) {
         targetShip.model.boardUnit(model.id);
         model.boardShip();
-        // Make unit invisible while boarded
-        isVisible = false;
         return;
       }
     }
-    
+
     // Update target position to follow moving ship
     final boardingPos = targetShip.model.getBoardingPosition();
     if (boardingPos != null) {
@@ -954,19 +953,19 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       model.targetPosition = targetShip.position.clone();
     }
   }
-  
+
   void _moveAlongCoastline(double dt, Vector2 target) {
     // Smart movement along coastline
     Vector2 toTarget = target - position;
     double distance = toTarget.length;
-    
+
     if (distance < 5) {
-      velocity = Vector2.zero();
+      model.velocity = Vector2.zero();
       return;
     }
-    
+
     toTarget.normalize();
-    
+
     // Check if direct path crosses water
     bool directPathClear = true;
     for (double checkDist = 0; checkDist < distance; checkDist += 10) {
@@ -976,40 +975,42 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         break;
       }
     }
-    
+
     if (directPathClear) {
       // Direct path is clear, use it
-      velocity = toTarget * model.maxSpeed;
+      model.velocity = toTarget * model.maxSpeed;
     } else {
       // Need to follow coastline
       // Try to move perpendicular to the direct path to find land
       Vector2 perpendicular = Vector2(-toTarget.y, toTarget.x);
-      
+
       // Try both directions
-      for (double side of [-1, 1]) {
+      for (int i = 0; i < 2; i++) {
+        double side = i == 0 ? -1.0 : 1.0;
         Vector2 sideStep = position + perpendicular * side * 20;
         if (gameRef.isOnLand(sideStep)) {
           // Move in this direction
-          velocity = (sideStep - position).normalized() * model.maxSpeed * 0.8;
+          model.velocity =
+              (sideStep - position).normalized() * model.maxSpeed * 0.8;
           break;
         }
       }
     }
   }
-  
+
   void _disembarkFromShip() {
     if (model.targetShipId == null) return;
-    
+
     // Find the ship
     final ships = gameRef.getAllShips();
     final ship = ships.firstWhere(
       (s) => s.model.id == model.targetShipId,
       orElse: () => ships.first,
     );
-    
+
     if (ship.model.id == model.targetShipId) {
       ship.model.disembarkUnit(model.id);
-      
+
       // Find deployment position
       final deployPos = ship.model.getDeploymentPosition();
       if (deployPos != null) {
@@ -1017,9 +1018,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         model.position = deployPos;
       }
     }
-    
+
     model.disembarkShip();
-    isVisible = true;
+    // Unit becomes visible again (handled in render method)
     _isHealingAnimation = false;
   }
 
@@ -1110,7 +1111,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     if (model.isTargeted) {
       targetingStatus = '\nTARGETED FOR ATTACK';
     }
-    
+
     // Add ship seeking status
     String shipStatus = '';
     if (model.isSeekingShip) {

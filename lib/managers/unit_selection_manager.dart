@@ -37,6 +37,9 @@ class UnitSelectionManager {
   // DEVELOPMENT MODE FLAG - Set to true to allow selecting both teams
   static const bool developmentMode = true;
 
+  // Sticky selection mode
+  bool _stickySelection = false;
+
   UnitSelectionManager(this.game);
 
   // Getters
@@ -51,6 +54,11 @@ class UnitSelectionManager {
   ShipComponent? get lastSelectedShip => _lastSelectedShip;
   Team? get playerTeam => _playerTeam;
 
+  /// Toggle sticky selection mode
+  void toggleStickySelection() {
+    _stickySelection = !_stickySelection;
+  }
+
   /// Set the player's team
   void setPlayerTeam(Team team) {
     _playerTeam = team;
@@ -58,6 +66,19 @@ class UnitSelectionManager {
 
   /// Handle tap on a ship - primary selection method for ships
   bool handleShipTap(ShipComponent tappedShip) {
+    // Check if units are selected and this is a friendly ship (healing interaction)
+    if (_selectedUnits.isNotEmpty) {
+      // Check if all selected units are same team as ship
+      final allSameTeam = _selectedUnits
+          .every((unit) => unit.model.team == tappedShip.model.team);
+
+      if (allSameTeam && tappedShip.model.canBoardUnit()) {
+        // Order damaged units to board the ship for healing
+        _orderUnitsToShip(tappedShip);
+        return true;
+      }
+    }
+
     // If tapping the same ship that's already selected, deselect it
     if (_selectedShips.contains(tappedShip)) {
       clearSelection();
@@ -212,8 +233,8 @@ class UnitSelectionManager {
     // Check if shift key is held (multi-select) - for future implementation
     bool isMultiSelect = false;
 
-    // If not multi-selecting, clear previous selection
-    if (!isMultiSelect) {
+    // If not multi-selecting and not sticky selection, clear previous selection
+    if (!isMultiSelect && !_stickySelection) {
       clearUnitSelection();
     }
 
@@ -286,6 +307,12 @@ class UnitSelectionManager {
       // Force the unit to prioritize movement to the new target
       unit.model.forceRedirect = true;
     }
+
+    // Don't clear selection if sticky selection is enabled
+    if (!_stickySelection) {
+      // Clear selection after giving orders
+      clearUnitSelection();
+    }
   }
 
   /// Move selected ships to position (tap-to-move for ships)
@@ -344,6 +371,58 @@ class UnitSelectionManager {
       unit.setTargetPosition(approachPosition);
       unit.model.forceRedirect = true;
     }
+  }
+
+  /// Order selected units to board a ship for healing
+  void _orderUnitsToShip(ShipComponent targetShip) {
+    if (_selectedUnits.isEmpty || !targetShip.model.canBoardUnit()) return;
+
+    // Filter units that need healing (below 100% health)
+    final unitsNeedingHealing = _selectedUnits
+        .where((unit) =>
+            unit.model.health < unit.model.maxHealth &&
+            !unit.model.isBoarded &&
+            unit.model.team == targetShip.model.team)
+        .toList();
+
+    if (unitsNeedingHealing.isEmpty) {
+      game.showUnitInfo("No damaged units to heal");
+      return;
+    }
+
+    // Sort by health percentage (most damaged first)
+    unitsNeedingHealing.sort((a, b) {
+      final healthPercentA = a.model.health / a.model.maxHealth;
+      final healthPercentB = b.model.health / b.model.maxHealth;
+      return healthPercentA.compareTo(healthPercentB);
+    });
+
+    // Order units to seek the ship
+    int orderedCount = 0;
+    for (final unit in unitsNeedingHealing) {
+      // Check if ship still has capacity
+      if (targetShip.model.boardedUnitIds.length >=
+          targetShip.model.maxBoardingCapacity) {
+        break;
+      }
+
+      // Set ship as target for unit
+      unit.model.setTargetShip(targetShip.model.id);
+      orderedCount++;
+    }
+
+    // Show feedback
+    if (orderedCount > 0) {
+      final shipTeam =
+          targetShip.model.team.toString().split('.').last.toUpperCase();
+      game.showUnitInfo(
+          "$orderedCount units ordered to $shipTeam ship for healing");
+    } else {
+      game.showUnitInfo("Ship at full capacity");
+    }
+
+    // Clear selection after ordering
+    clearSelection();
   }
 
   /// Attack the current target
@@ -460,6 +539,46 @@ class UnitSelectionManager {
     }
   }
 
+  /// Select all friendly units
+  void selectAllFriendlyUnits() {
+    clearSelection();
+
+    // Determine player team
+    Team? teamToSelect = _playerTeam;
+    if (teamToSelect == null && developmentMode) {
+      // In dev mode, select the team with the most units
+      final units = game.getAllUnits();
+      int blueCount = 0;
+      int redCount = 0;
+
+      for (final unit in units) {
+        if (unit.model.health <= 0) continue;
+        if (unit.model.team == Team.blue)
+          blueCount++;
+        else
+          redCount++;
+      }
+
+      teamToSelect = blueCount >= redCount ? Team.blue : Team.red;
+    }
+
+    if (teamToSelect == null) return;
+
+    // Select all units of the chosen team
+    for (final unit in game.getAllUnits()) {
+      if (unit.model.health <= 0) continue;
+      if (unit.model.team == teamToSelect) {
+        unit.setSelected(true);
+        _selectedUnits.add(unit);
+      }
+    }
+
+    if (_selectedUnits.isNotEmpty) {
+      _lastSelectedUnit = _selectedUnits.first;
+      game.showUnitInfo("Selected ${_selectedUnits.length} units");
+    }
+  }
+
   /// Clear all selections
   void clearSelection() {
     clearUnitSelection();
@@ -570,6 +689,7 @@ class UnitSelectionManager {
       final teamStr = unit.model.team.toString().split('.').last;
 
       objectsInfo.add({
+        'objectType': 'UNIT',
         'type': 'UNIT',
         'subtype': typeStr.toUpperCase(),
         'team': teamStr.toUpperCase(),
@@ -588,6 +708,7 @@ class UnitSelectionManager {
       final cargo = ship.model.getAvailableUnits();
 
       objectsInfo.add({
+        'objectType': 'SHIP',
         'type': 'SHIP',
         'subtype': 'TURTLE SHIP',
         'team': teamStr.toUpperCase(),

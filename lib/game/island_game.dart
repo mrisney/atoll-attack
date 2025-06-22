@@ -593,6 +593,13 @@ class IslandGame extends FlameGame
     clampCamera();
   }
 
+  void zoomAt(double newZoom, Vector2 focalPoint) {
+    final worldBeforeZoom = screenToWorldPosition(focalPoint);
+    zoomLevel = newZoom.clamp(minZoom, maxZoom);
+    cameraOrigin = worldBeforeZoom - focalPoint / zoomLevel;
+    clampCamera();
+  }
+
   void panCamera(Vector2 direction) {
     const panSpeed = 50.0;
     final scaledDirection = direction.normalized() * panSpeed / zoomLevel;
@@ -1011,6 +1018,10 @@ class IslandGame extends FlameGame
     }
 
     return objectsInfo;
+  }
+
+  List<Map<String, dynamic>> getSelectedObjectsInfo() {
+    return _unitSelectionManager.getSelectedObjectsInfo();
   }
 
   Map<String, dynamic>? getSelectedShipCargo() {
