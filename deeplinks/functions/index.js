@@ -1,56 +1,77 @@
 // functions/index.js
+// Combined Cloud Functions for Atoll Attack game session management
+
 const functions = require('firebase-functions');
 const admin     = require('firebase-admin');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 admin.initializeApp();
+const db = admin.firestore();
 
+// 1️⃣ Redirect invite endpoint
+//    - Validates game code and expiration
+//    - Redirects to deep link URI
 exports.inviteRedirect = functions.https.onRequest(async (req, res) => {
   try {
-    // Extract code from path: e.g. /i/ISLAND-X7B2
     const segments = req.path.split('/');
     const code = segments[segments.length - 1];
 
-    // Fetch invite doc from Firestore
-    const snap = await admin.firestore().collection('invites').doc(code).get();
+    const snap = await db.collection('games').doc(code).get();
     if (!snap.exists) {
-      return res.status(404).send('Invite not found or expired');
+      return res.status(404).send('Invalid invite code');
     }
 
     const data = snap.data();
-    // Assuming expiresAt is a Firestore Timestamp
-    if (data.expiresAt.toMillis() < Date.now()) {
+    if (data.expiresAt.toDate() < new Date()) {
       return res.status(410).send('Invite has expired');
     }
 
-    // Deep-link into your app
-    const appLink = `https://links.atoll-attack.com/join?code=${encodeURIComponent(code)}`;
-
-    // Fallback to store if app not installed
-    const ua = req.get('User-Agent') || '';
-    const storeLink = /iPhone|iPad|iPod/.test(ua)
-      ? 'https://apps.apple.com/app/id123456789'
-      : 'https://play.google.com/store/apps/details?id=com.risney.atollattack';
-
-    // Redirect
-    res.format({
-      'application/json': () => res.redirect(302, appLink),
-      'text/html': () => {
-        res.send(`
-          <html>
-            <head>
-              <meta http-equiv="refresh" content="0; url=${appLink}" />
-            </head>
-            <body>
-              <p>Opening app… if nothing happens, <a href="${storeLink}">get the app</a>.</p>
-            </body>
-          </html>
-        `);
-      },
-      'default': () => res.redirect(302, appLink)
-    });
-
+    return res.redirect(302, `atollattack://join?code=${encodeURIComponent(code)}`);
   } catch (err) {
     console.error('Error in inviteRedirect:', err);
-    res.status(500).send('Server error');
+    return res.status(500).send('Server error');
   }
+});
+
+// 2️⃣ Callable: createRoom
+//    - Generates a unique game code
+//    - Initializes Firestore document under games/{code}
+exports.createRoom = functions.https.onCall(async (data, ctx) => {
+  const playerId = ctx.auth?.uid;
+  if (!playerId) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be signed in');
+  }
+
+  const code = `ISL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const gameRef = db.collection('games').doc(code);
+
+  await gameRef.set({
+    state:     'waiting',
+    players:   [playerId],
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(
+      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    ),
+    settings:  data.settings || {}
+  });
+
+  return { code };
+});
+
+// 3️⃣ Scheduled expiration of stale rooms
+//    - Runs daily to mark 'waiting' rooms older than 7 days as 'expired'
+exports.expireOldRooms = onSchedule('every 24 hours', async (event) => {
+  const cutoff = admin.firestore.Timestamp.fromDate(
+    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  );
+
+  const staleSnap = await db
+    .collection('games')
+    .where('state', '==', 'waiting')
+    .where('createdAt', '<', cutoff)
+    .get();
+
+  const batch = db.batch();
+  staleSnap.docs.forEach(doc => batch.update(doc.ref, { state: 'expired' }));
+  return batch.commit();
 });
