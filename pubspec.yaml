@@ -1,5 +1,5 @@
-name: atoll_wars
-description: XKCD-style island RTS game
+name: atoll_attack
+description: RTS game
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -29,7 +29,9 @@ dependencies:
   flutter_screenutil: ^5.9.3
   flutter_launcher_icons: ^0.14.4
   app_links: ^6.4.0
- 
+  share_plus: ^11.0.0
+  logger: ^2.5.0
+
 
 dev_dependencies:
   flutter_test:

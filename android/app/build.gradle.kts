@@ -16,7 +16,7 @@ plugins {
 android {
   namespace = "com.risney.games.atoll"
   compileSdk = flutter.compileSdkVersion
-  ndkVersion = flutter.ndkVersion
+  ndkVersion = "27.0.12077973"
 
   // ——————————————————————————————
   //   SIGNING CONFIGURATION START
@@ -32,7 +32,7 @@ android {
 
   defaultConfig {
     applicationId = "com.risney.games.atoll"
-    minSdk = flutter.minSdkVersion
+    minSdk = 23
     targetSdk = flutter.targetSdkVersion
     versionCode = flutter.versionCode
     versionName = flutter.versionName
@@ -59,6 +59,13 @@ android {
   // ——————————————————————————————
   //   SIGNING CONFIGURATION END
   // ——————————————————————————————
+}
+
+dependencies {
+    implementation("com.google.android.gms:play-services-base:18.2.0")
+    // If you're using Firebase, these are commonly needed:
+    implementation("com.google.firebase:firebase-common:21.0.0")
+    
 }
 
 flutter {

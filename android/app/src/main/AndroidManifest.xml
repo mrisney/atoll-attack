@@ -1,59 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.risney.games.atoll">
 
-  <application
-      android:label="Atoll  Attack"
-      android:name="${applicationName}"
-      android:icon="@mipmap/launcher_icon">
+    <!-- Grant network access -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
-    <activity
-        android:name=".MainActivity"
-        android:exported="true"
-        android:launchMode="singleTop"
-        android:taskAffinity=""
-        android:theme="@style/LaunchTheme"
-        android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|
-                               locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-        android:hardwareAccelerated="true"
-        android:windowSoftInputMode="adjustResize">
+    <application
+        android:name="${applicationName}"
+        android:label="Atoll Attack"
+        android:icon="@mipmap/launcher_icon"
+        android:roundIcon="@mipmap/launcher_icon">
 
-      <!-- Splash / launch theme meta-data -->
-      <meta-data
-        android:name="io.flutter.embedding.android.NormalTheme"
-        android:resource="@style/NormalTheme"/>
+        <!-- Flutter embedding metadata -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
 
-      <!-- 1) LINKS INTENT-FILTER -->
-      <intent-filter android:autoVerify="true">
-        <action android:name="android.intent.action.VIEW"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <data
-            android:scheme="https"
-            android:host="link.atoll-attack.com"
-            android:pathPrefix="/join"/>
-        </intent-filter>
+        <!-- App Links: handle your https://link.atoll-attack.com/join?code=... -->
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTop"
+            android:exported="true"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="true">
 
+            <!-- Splash / normal theme meta -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
 
-      <!-- 2) Launcher filter  -->
-      <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
-      </intent-filter>
+            <!-- Deep-link filter for HTTPS App Links -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="link.atoll-attack.com"
+                    android:pathPrefix="/join" />
+            </intent-filter>
 
-    </activity>
+            <!-- Custom URL-scheme fallback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="atoll"
+                    android:host="join" />
+            </intent-filter>
 
-    <!-- Flutter embedding metadata (do not remove) -->
-    <meta-data
-        android:name="flutterEmbedding"
-        android:value="2" />
+            <!-- Launcher filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 
-  </application>
+    <!-- Required for PROCESS_TEXT queries -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
 
-  <!-- Required for PROCESS_TEXT queries… -->
-  <queries>
-    <intent>
-      <action android:name="android.intent.action.PROCESS_TEXT"/>
-      <data android:mimeType="text/plain"/>
-    </intent>
-  </queries>
 </manifest>

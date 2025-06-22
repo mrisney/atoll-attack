@@ -1,314 +1,316 @@
-// lib/game/game_screen.dart
+// lib/screens/game_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/room_service.dart' as room_service;
+import '../providers/game_provider.dart';
+import '../widgets/island_settings_panel.dart';
+import '../widgets/game_controls_panel.dart';
+import '../widgets/game_hud.dart';
+import '../widgets/draggable_selected_units_panel.dart';
 import 'package:flame/game.dart';
-import '../game/island_game.dart';
-import 'package:flame/extensions.dart';
+import 'join_screen.dart' show JoinScreen;
 
-class GameScreen extends StatefulWidget {
-  const GameScreen({Key? key  Widget _buildActionButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(4),
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.3),
-              width: 1,
-            ),
-          ),
-          child: Icon(icon, color: Colors.white, size: 16),
-        ),
-      ),
-    );
-  }
-}) : super(key: key);
+/// Main game screen, supports both room creation and subscription.
+class GameScreen extends ConsumerStatefulWidget {
+  /// Optional game code for join or rejoin flows.
+  final String? gameCode;
+  const GameScreen({Key? key, this.gameCode}) : super(key: key);
 
   @override
-  State<GameScreen> createState() => _GameScreenState();
+  ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
-  late IslandGame _game;
-  double _baseZoom = 1.0;
-  Offset? _lastFocalPoint;
-  bool _stickySelection = false;
+class _GameScreenState extends ConsumerState<GameScreen> {
+  StreamSubscription<room_service.GameDoc>? _roomSub;
+  bool showPanel = false;
+  bool showHUD = true;
+  bool showSelectedUnitsPanel = true;
+  bool isSettingsMode = true;
+  static const Color goldColor = Color(0xFFFFD700);
 
   @override
   void initState() {
     super.initState();
-    // Create game without initial size - Flame will handle it
-    _game = IslandGame(
-      amplitude: 0.5,
-      wavelength: 1.0,
-      bias: 0.0,
-      seed: 42,
-      gameSize: Vector2.zero(), // Will be set by Flame
-      islandRadius: 0.7,
-      showPerimeter: false,
+    if (widget.gameCode != null) {
+      _persistGameCode(widget.gameCode!);
+      _subscribeToRoom(widget.gameCode!);
+    }
+  }
+
+  /// Save last game code locally for rejoin support.
+  Future<void> _persistGameCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('lastGameCode', code);
+  }
+
+  /// Listen to Firestore room document for state changes.
+  void _subscribeToRoom(String code) {
+    _roomSub = room_service.RoomService.instance.watchRoom(code).listen(
+      (game) {
+        if (game.state == 'active') {
+          // Both players joined; proceed with real-time sync / gameplay
+        } else if (game.state == 'expired') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Game expired')),
+          );
+        }
+      },
+      onError: (err) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $err')));
+      },
     );
   }
 
   @override
+  void dispose() {
+    _roomSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final gameNotifier = ref.watch(gameProvider.notifier);
+    final game = ref.watch(gameProvider);
+    final gameStats = ref.watch(gameStatsProvider);
+    final screenSize = MediaQuery.of(context).size;
+    final safePadding = MediaQuery.of(context).padding;
+
+    // Setup game callbacks
+    if (game.onUnitCountsChanged == null) {
+      game.onUnitCountsChanged = () {
+        if (mounted) {
+          gameNotifier.notifyUnitCountsChanged();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        }
+      };
+    }
+
+    // Determine share link availability
+    final code = widget.gameCode;
+
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Atoll Attack'),
+        actions: [
+          if (code != null)
+            IconButton(
+              icon: const Icon(Icons.share),
+              onPressed: () {
+                final link = 'https://link.atoll-attack.com/join?code=$code';
+                Share.share(
+                  '🏝️ Join me in Atoll Attack! Tap: $link',
+                  subject: 'Atoll Attack Invite',
+                );
+              },
+            ),
+        ],
+      ),
       body: Stack(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onScaleStart: (details) {
-              _baseZoom = _game.zoomLevel;
-              _lastFocalPoint = details.localFocalPoint;
-            },
-            onScaleUpdate: (details) {
-              if (details.pointerCount == 2) {
-                // Two-finger zoom
-                final newZoom = (_baseZoom * details.scale).clamp(_game.minZoom, _game.maxZoom);
-                _game.zoomAt(newZoom, details.localFocalPoint.toVector2());
-              } else if (details.pointerCount == 1 && _lastFocalPoint != null) {
-                // Single finger pan
-                final delta = details.localFocalPoint - _lastFocalPoint!;
-                _game.cameraOrigin -= delta.toVector2() / _game.zoomLevel;
-                _game.clampCamera();
-                _lastFocalPoint = details.localFocalPoint;
-              }
-            },
-            onScaleEnd: (details) {
-              _lastFocalPoint = null;
-            },
-            child: GameWidget(game: _game),
-          ),
-          
-          // Selection controls (top left)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 10,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Clear selection button
-                _buildControlButton(
-                  icon: Icons.clear,
-                  label: 'Clear',
-                  onPressed: () {
-                    _game.clearSelection();
-                  },
-                ),
-                const SizedBox(height: 8),
-                // Sticky selection toggle
-                _buildControlButton(
-                  icon: _stickySelection ? Icons.push_pin : Icons.push_pin_outlined,
-                  label: 'Sticky',
-                  isActive: _stickySelection,
-                  onPressed: () {
-                    setState(() {
-                      _stickySelection = !_stickySelection;
-                      _game._unitSelectionManager.toggleStickySelection();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                // Select all units button
-                _buildControlButton(
-                  icon: Icons.select_all,
-                  label: 'All',
-                  onPressed: () {
-                    _game._unitSelectionManager.selectAllFriendlyUnits();
-                  },
-                ),
-              ],
-            ),
-          ),
-          
-          // Ship controls (top right)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            right: 10,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Unstick ships button
-                _buildControlButton(
-                  icon: Icons.anchor,
-                  label: 'Unstick',
-                  onPressed: () {
-                    for (final ship in _game._ships) {
-                      if (ship.model.isStuck) {
-                        ship.model.unstick();
-                      }
-                    }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Ships unstuck'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          
-          // Selection info panel (bottom left)
-          if (_game.selectedUnits.isNotEmpty || _game.selectedShips.isNotEmpty)
+          // Flame game widget
+          GameWidget(game: game),
+
+          // HUD overlay
+          if (showHUD)
             Positioned(
-              bottom: 20,
-              left: 20,
+              top: safePadding.top + 8,
+              left: 16,
+              child: GameHUD(
+                blueUnits: gameStats['blueUnits'] ?? 0,
+                redUnits: gameStats['redUnits'] ?? 0,
+                blueHealthPercent: gameStats['blueHealth'] ?? 0.0,
+                redHealthPercent: gameStats['redHealth'] ?? 0.0,
+                isVisible: showHUD,
+                onToggleVisibility: () => setState(() => showHUD = !showHUD),
+                blueUnitsRemaining: gameStats['blueRemaining'] ?? 0,
+                redUnitsRemaining: gameStats['redRemaining'] ?? 0,
+              ),
+            ),
+          if (!showHUD)
+            Positioned(
+              top: safePadding.top + 8,
+              left: 16,
+              child: GestureDetector(
+                onTap: () => setState(() => showHUD = true),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.info_outline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+
+          // Panel toggle
+          Positioned(
+            top: safePadding.top + 8,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => setState(() => showPanel = !showPanel),
+              onLongPress: () => setState(() {
+                showPanel = true;
+                isSettingsMode = !isSettingsMode;
+              }),
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(8),
+                  color: showPanel
+                      ? (isSettingsMode ? Colors.blueGrey : Colors.orange)
+                      : Colors.grey.shade800,
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
+                    color: Colors.white.withOpacity(0.2),
                     width: 1,
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Selected: ${_game.selectedUnits.length} units, ${_game.selectedShips.length} ships',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+                child: Icon(
+                  isSettingsMode ? Icons.tune : Icons.sports_esports,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+
+          // Settings/Controls panel
+          if (showPanel)
+            Positioned(
+              bottom: safePadding.bottom + 12,
+              left: 12,
+              right: 12,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Stop button
-                        _buildActionButton(
-                          icon: Icons.stop,
-                          onPressed: () {
-                            // Stop all selected units
-                            for (final unit in _game.selectedUnits) {
-                              unit.model.targetPosition = unit.model.position.clone();
-                              unit.model.targetEnemy = null;
-                            }
-                            for (final ship in _game.selectedShips) {
-                              ship.model.stop();
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        // Clear selection
-                        _buildActionButton(
-                          icon: Icons.close,
-                          onPressed: () {
-                            _game.clearSelection();
-                          },
-                        ),
+                        _buildTabButton('Settings', Icons.tune, true),
+                        _buildTabButton(
+                            'Controls', Icons.sports_esports, false),
                       ],
                     ),
-                  ],
+                  ),
+                  Container(
+                    constraints:
+                        BoxConstraints(maxHeight: screenSize.height * 0.4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: isSettingsMode
+                        ? IslandSettingsPanel(
+                            onClose: () => setState(() => showPanel = false),
+                          )
+                        : GameControlsPanel(
+                            onClose: () => setState(() => showPanel = false),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Selected units
+          if (game.selectedUnits.isNotEmpty && showSelectedUnitsPanel)
+            DraggableSelectedUnitsPanel(
+              unitsInfo: game.getSelectedUnitsInfo(),
+              onClose: () {
+                game.clearSelection();
+                setState(() {});
+              },
+            ),
+
+          // Victory banner
+          if (gameStats['isVictoryAchieved'] == true)
+            Positioned(
+              top: screenSize.height * 0.3,
+              left: 50,
+              right: 50,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: goldColor, width: 2),
+                ),
+                child: const Text(
+                  '🎉 VICTORY! 🎉',
+                  style: TextStyle(
+                    color: goldColor,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
-          
-          // Zoom controls (bottom right)
-          Positioned(
-            bottom: 20,
-            right: 20,
-            child: Column(
-              children: [
-                FloatingActionButton.small(
-                  heroTag: "zoomIn",
-                  onPressed: () {
-                    setState(() {
-                      _game.zoomIn();
-                    });
-                  },
-                  backgroundColor: Colors.black.withOpacity(0.5),
-                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 20),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: "zoomOut",
-                  onPressed: () {
-                    setState(() {
-                      _game.zoomOut();
-                    });
-                  },
-                  backgroundColor: Colors.black.withOpacity(0.5),
-                  child: const Icon(Icons.zoom_out, color: Colors.white, size: 20),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: "zoomReset",
-                  onPressed: () {
-                    setState(() {
-                      _game.resetZoom();
-                    });
-                  },
-                  backgroundColor: Colors.black.withOpacity(0.5),
-                  child: const Icon(Icons.fit_screen, color: Colors.white, size: 20),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
+      floatingActionButton: code == null
+          ? FloatingActionButton(
+              onPressed: () async {
+                final newCode = await room_service.RoomService.instance
+                    .createRoom(settings: {});
+                await _persistGameCode(newCode);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => JoinScreen(inviteCode: newCode),
+                  ),
+                );
+              },
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
-  
-  Widget _buildControlButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    bool isActive = false,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isActive 
-                ? Colors.blue.withOpacity(0.7)
-                : Colors.black.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isActive 
-                  ? Colors.blue.shade300
-                  : Colors.white.withOpacity(0.3),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+
+  Widget _buildTabButton(String label, IconData icon, bool isSettingsTab) {
+    final isActive = isSettingsMode == isSettingsTab;
+    return GestureDetector(
+      onTap: () => setState(() => isSettingsMode = isSettingsTab),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white.withOpacity(0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-// Helper extension
-extension OffsetToVector2 on Offset {
-  Vector2 toVector2() => Vector2(dx, dy);
 }

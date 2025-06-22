@@ -1,38 +1,83 @@
 // lib/screens/game_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flame/game.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/game_doc.dart';
+import '../services/share_service.dart';
 import '../providers/game_provider.dart';
 import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
 import '../widgets/game_hud.dart';
 import '../widgets/draggable_selected_units_panel.dart';
+import 'package:flame/game.dart';
 
+/// Main game screen with integrated invite-sharing and join notifications.
 class GameScreen extends ConsumerStatefulWidget {
-  const GameScreen({Key? key}) : super(key: key);
+  /// Optional game code for invite join or rejoin.
+  final String? gameCode;
+  const GameScreen({Key? key, this.gameCode}) : super(key: key);
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
-  bool showPanel = false; // Combined settings/controls panel
+  StreamSubscription<GameDoc>? _joinSub;
+  bool showPanel = false;
   bool showHUD = true;
   bool showSelectedUnitsPanel = true;
-  bool isSettingsMode = true; // true = settings, false = controls
+  bool isSettingsMode = true;
 
+  // Invite icon highlight when opponent arrives
+  bool _opponentJoined = false;
+  String? _joinedPlayerId;
   static const Color goldColor = Color(0xFFFFD700);
+
+  @override
+  void initState() {
+    super.initState();
+    final code = widget.gameCode;
+    if (code != null) {
+      _persistGameCode(code);
+      ShareService.instance.listenForJoin(code, (GameDoc gameDoc) {
+        setState(() {
+          _opponentJoined = true;
+          _joinedPlayerId =
+              gameDoc.players.isNotEmpty ? gameDoc.players.last : null;
+        });
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _opponentJoined = false;
+              _joinedPlayerId = null;
+            });
+          }
+        });
+      }).then((sub) => _joinSub = sub);
+    }
+  }
+
+  Future<void> _persistGameCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('lastGameCode', code);
+  }
+
+  @override
+  void dispose() {
+    _joinSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final gameNotifier = ref.watch(gameProvider.notifier);
     final game = ref.watch(gameProvider);
     final gameStats = ref.watch(gameStatsProvider);
+    final media = MediaQuery.of(context);
+    final code = widget.gameCode;
 
-    final screenSize = MediaQuery.of(context).size;
-    final safePadding = MediaQuery.of(context).padding;
-
-    // Set up callback
+    // Setup unit-count callback
     if (game.onUnitCountsChanged == null) {
       game.onUnitCountsChanged = () {
         if (mounted) {
@@ -47,13 +92,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Game widget
+          // Game canvas
           GameWidget(game: game),
 
-          // Compact HUD
+          // HUD overlay
           if (showHUD)
             Positioned(
-              top: safePadding.top + 8,
+              top: media.padding.top + 8,
               left: 16,
               child: GameHUD(
                 blueUnits: gameStats['blueUnits'] ?? 0,
@@ -66,11 +111,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 redUnitsRemaining: gameStats['redRemaining'] ?? 0,
               ),
             ),
-
-          // Minimized HUD button
           if (!showHUD)
             Positioned(
-              top: safePadding.top + 8,
+              top: media.padding.top + 8,
               left: 16,
               child: GestureDetector(
                 onTap: () => setState(() => showHUD = true),
@@ -80,15 +123,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     color: Colors.black.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(Icons.info_outline,
-                      color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.info_outline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
             ),
 
-          // Single control button (replaces two FABs)
+          // Settings/controls toggle
           Positioned(
-            top: safePadding.top + 8,
+            top: media.padding.top + 8,
             right: 16,
             child: GestureDetector(
               onTap: () => setState(() => showPanel = !showPanel),
@@ -117,16 +163,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ),
 
-          // Combined panel
+          // Settings panel
           if (showPanel)
             Positioned(
-              bottom: safePadding.bottom + 12,
+              bottom: media.padding.bottom + 12,
               left: 12,
               right: 12,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Tab selector
                   Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
@@ -142,11 +187,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       ],
                     ),
                   ),
-                  // Panel content
                   Container(
-                    constraints: BoxConstraints(
-                      maxHeight: screenSize.height * 0.4,
-                    ),
+                    constraints:
+                        BoxConstraints(maxHeight: media.size.height * 0.4),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(12),
@@ -157,17 +200,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     ),
                     child: isSettingsMode
                         ? IslandSettingsPanel(
-                            onClose: () => setState(() => showPanel = false),
-                          )
+                            onClose: () => setState(() => showPanel = false))
                         : GameControlsPanel(
-                            onClose: () => setState(() => showPanel = false),
-                          ),
+                            onClose: () => setState(() => showPanel = false)),
                   ),
                 ],
               ),
             ),
 
-          // Selected units panel (draggable)
+          // Selected units panel
           if (game.selectedUnits.isNotEmpty && showSelectedUnitsPanel)
             DraggableSelectedUnitsPanel(
               unitsInfo: game.getSelectedUnitsInfo(),
@@ -177,10 +218,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               },
             ),
 
-          // Victory notification
+          // Victory banner
           if (gameStats['isVictoryAchieved'] == true)
             Positioned(
-              top: screenSize.height * 0.3,
+              top: media.size.height * 0.3,
               left: 50,
               right: 50,
               child: Container(
@@ -201,15 +242,59 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ),
             ),
+
+          // Share icon & join notification
+          if (code != null)
+            Positioned(
+              bottom: media.padding.bottom + 16,
+              right: 16,
+              child: Column(
+                children: [
+                  if (_joinedPlayerId != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Player ${_joinedPlayerId!.substring(0, 6)} joined',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: () => ShareService.instance.shareGameInvite(code),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white
+                            .withOpacity(_opponentJoined ? 0.8 : 0.4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.share,
+                        color: Colors.black87,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildTabButton(String label, IconData icon, bool isSettings) {
-    final isActive = isSettingsMode == isSettings;
+  Widget _buildTabButton(String label, IconData icon, bool isSettingsTab) {
+    final isActive = isSettingsMode == isSettingsTab;
     return GestureDetector(
-      onTap: () => setState(() => isSettingsMode = isSettings),
+      onTap: () => setState(() => isSettingsMode = isSettingsTab),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
