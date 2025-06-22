@@ -17,7 +17,7 @@ class DraggableSelectedUnitsPanel extends StatefulWidget {
 }
 
 class _DraggableSelectedUnitsPanelState
-    extends State<DraggableSelectedUnitsPanel> {
+    extends State<DraggableSelectedUnitsPanel> with WidgetsBindingObserver {
   int _currentIndex = 0;
   Offset? _position;
   final ScrollController _scrollController = ScrollController();
@@ -29,34 +29,155 @@ class _DraggableSelectedUnitsPanelState
   double _maxX = 0;
   double _maxY = 0;
 
+  // Track previous orientation to detect changes
+  Orientation? _previousOrientation;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializePosition();
     });
   }
 
-  void _initializePosition() {
-    final screenSize = MediaQuery.of(context).size;
-    final safeArea = MediaQuery.of(context).padding;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Recalculate boundaries when screen size changes (e.g., rotation)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateBoundariesForCurrentOrientation();
+    });
+  }
 
-    // Set boundaries
-    _minX = safeArea.left;
-    _minY = safeArea.top;
-    _maxX = screenSize.width - (screenSize.width * 0.25) - safeArea.right;
-    _maxY = screenSize.height - 100 - safeArea.bottom;
-
-    setState(() {
-      // Start at top-left with some padding
-      _position = Offset(_minX + 10, _minY + 10);
+  @override
+  void didChangeMetrics() {
+    // Called when screen metrics change (including rotation)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _handleOrientationChange();
+      }
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _initializePosition() {
+    final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+    final isLandscape = screenSize.width > screenSize.height;
+
+    // Calculate panel dimensions for boundary calculation
+    final panelWidth = isLandscape
+        ? math.min(280.0, screenSize.width * 0.25)
+        : math.min(200.0, screenSize.width * 0.45);
+    final panelHeight = math.min(screenSize.height * 0.5, 300.0);
+
+    // Set boundaries with panel dimensions in mind
+    _minX = safeArea.left;
+    _minY = safeArea.top;
+    _maxX = screenSize.width - panelWidth - safeArea.right;
+    _maxY = screenSize.height - panelHeight - safeArea.bottom;
+
+    setState(() {
+      // Start position avoids the Battle Status panel
+      // In portrait: below the Battle Status (approximately 200px from top)
+      // In landscape: right side of screen
+      if (isLandscape) {
+        _position = Offset(
+          screenSize.width * 0.65, // Right side
+          _minY + 60, // Below top controls
+        );
+      } else {
+        _position = Offset(
+          _minX + 10, // Left side
+          _minY + 200, // Below Battle Status panel
+        );
+      }
+
+      _previousOrientation = MediaQuery.of(context).orientation;
+    });
+  }
+
+  void _updateBoundariesForCurrentOrientation() {
+    if (!mounted) return;
+
+    final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+    final isLandscape = screenSize.width > screenSize.height;
+
+    // Calculate panel dimensions for boundary calculation
+    final panelWidth = isLandscape
+        ? math.min(280.0, screenSize.width * 0.25)
+        : math.min(200.0, screenSize.width * 0.45);
+    final panelHeight = math.min(screenSize.height * 0.5, 300.0);
+
+    // Set boundaries with panel dimensions in mind
+    final newMinX = safeArea.left;
+    final newMinY = safeArea.top;
+    final newMaxX = screenSize.width - panelWidth - safeArea.right;
+    final newMaxY = screenSize.height - panelHeight - safeArea.bottom;
+
+    setState(() {
+      _minX = newMinX;
+      _minY = newMinY;
+      _maxX = newMaxX;
+      _maxY = newMaxY;
+
+      // If we have a position, ensure it's still within bounds after rotation
+      if (_position != null) {
+        final clampedX = _position!.dx.clamp(_minX, _maxX);
+        final clampedY = _position!.dy.clamp(_minY, _maxY);
+
+        // If position needs adjustment, update it
+        if (clampedX != _position!.dx || clampedY != _position!.dy) {
+          _position = Offset(clampedX, clampedY);
+        }
+      }
+    });
+  }
+
+  void _handleOrientationChange() {
+    if (!mounted) return;
+
+    final currentOrientation = MediaQuery.of(context).orientation;
+
+    // Only handle if orientation actually changed
+    if (_previousOrientation != null &&
+        _previousOrientation != currentOrientation) {
+      final screenSize = MediaQuery.of(context).size;
+      final safeArea = MediaQuery.of(context).padding;
+      final isLandscape = currentOrientation == Orientation.landscape;
+
+      // Update boundaries first
+      _updateBoundariesForCurrentOrientation();
+
+      // Calculate a smart new position based on the new orientation
+      if (_position != null) {
+        setState(() {
+          if (isLandscape) {
+            // Moving to landscape: position on the right side
+            _position = Offset(
+              screenSize.width * 0.65,
+              math.min(_position!.dy, _maxY),
+            );
+          } else {
+            // Moving to portrait: position on the left side, below status panel
+            _position = Offset(
+              _minX + 10,
+              math.max(_minY + 200, math.min(_position!.dy, _maxY)),
+            );
+          }
+        });
+      }
+    }
+
+    _previousOrientation = currentOrientation;
   }
 
   @override
@@ -70,14 +191,18 @@ class _DraggableSelectedUnitsPanelState
 
     if (_position == null) {
       _initializePosition();
+      return const SizedBox.shrink(); // Don't render until position is set
     }
 
     final screenSize = MediaQuery.of(context).size;
     final isLandscape = screenSize.width > screenSize.height;
 
+    // Store current orientation
+    _previousOrientation = MediaQuery.of(context).orientation;
+
     // Responsive width based on screen orientation
     final width =
-        isLandscape ? screenSize.width * 0.25 : screenSize.width * 0.4;
+        isLandscape ? screenSize.width * 0.25 : screenSize.width * 0.45;
 
     return Positioned(
       left: _position!.dx,
@@ -97,13 +222,25 @@ class _DraggableSelectedUnitsPanelState
           child: Container(
             width: width,
             constraints: BoxConstraints(
-              maxWidth: isLandscape ? 300 : width,
-              maxHeight: screenSize.height * 0.7,
+              maxWidth: isLandscape ? 280 : 200, // More compact max width
+              maxHeight: screenSize.height * 0.5, // Reduced max height
+              minWidth: 160, // Minimum width
             ),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
+              color:
+                  Colors.black.withOpacity(0.5), // More transparent (was 0.7)
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2), // More subtle border
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3), // Lighter shadow
+                  blurRadius: 6,
+                  offset: const Offset(1, 1),
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -126,13 +263,50 @@ class _DraggableSelectedUnitsPanelState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withOpacity(0.5),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.drag_indicator, color: Colors.white70, size: 14),
+          // Drag handle visual indicator
+          Container(
+            width: 20,
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 12,
+                  height: 2,
+                  margin: const EdgeInsets.symmetric(vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+                Container(
+                  width: 12,
+                  height: 2,
+                  margin: const EdgeInsets.symmetric(vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -224,6 +398,7 @@ class _DraggableSelectedUnitsPanelState
     final int health = unitInfo['health'] ?? 0;
     final bool hasFlag = unitInfo['hasFlag'] ?? false;
     final String id = unitInfo['id'] ?? '';
+    final bool isTargeted = unitInfo['isTargeted'] ?? false;
 
     Color teamColor = team == 'BLUE' ? Colors.blue : Colors.red;
 
@@ -270,6 +445,8 @@ class _DraggableSelectedUnitsPanelState
               ),
               if (hasFlag)
                 const Icon(Icons.flag, color: Colors.yellow, size: 12),
+              if (isTargeted)
+                const Icon(Icons.gps_fixed, color: Colors.grey, size: 12),
             ],
           ),
           const SizedBox(height: 4),
@@ -338,7 +515,14 @@ class _DraggableSelectedUnitsPanelState
           padding: const EdgeInsets.symmetric(vertical: 4),
           itemCount: widget.unitsInfo.length,
           itemBuilder: (context, index) {
-            return _buildCompactInfo(widget.unitsInfo[index]);
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              child: _buildCompactInfo(widget.unitsInfo[index]),
+            );
           },
         ),
       ),
