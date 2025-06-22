@@ -155,8 +155,8 @@ class IslandGame extends FlameGame
 
       if (retryCoastline.isEmpty) {
         debugPrint("Still no coastline, using default ship spawn locations");
-        _spawnShip(Team.blue, Vector2(size.x * 0.25, size.y * 0.15));
-        _spawnShip(Team.red, Vector2(size.x * 0.75, size.y * 0.85));
+        _spawnShip(Team.blue, Vector2(size.x * 0.5, size.y * 0.1));
+        _spawnShip(Team.red, Vector2(size.x * 0.5, size.y * 0.9));
         return;
       }
     }
@@ -164,19 +164,29 @@ class IslandGame extends FlameGame
     // Find extreme points on coastline
     final validCoastline = coastline.isNotEmpty ? coastline : getCoastline();
     if (validCoastline.isEmpty) {
-      _spawnShip(Team.blue, Vector2(size.x * 0.25, size.y * 0.15));
-      _spawnShip(Team.red, Vector2(size.x * 0.75, size.y * 0.85));
+      _spawnShip(Team.blue, Vector2(size.x * 0.5, size.y * 0.1));
+      _spawnShip(Team.red, Vector2(size.x * 0.5, size.y * 0.9));
       return;
     }
 
     final northPoint = validCoastline.reduce((a, b) => a.dy < b.dy ? a : b);
     final southPoint = validCoastline.reduce((a, b) => a.dy > b.dy ? a : b);
 
-    final blueShipPos = Vector2(northPoint.dx, northPoint.dy - 25);
-    final redShipPos = Vector2(southPoint.dx, southPoint.dy + 40);
+    // Spawn ships further away from shore to avoid getting stuck
+    final blueShipPos = Vector2(size.x * 0.5, northPoint.dy - 60);
+    final redShipPos = Vector2(size.x * 0.5, southPoint.dy + 60);
 
     _spawnShip(Team.blue, blueShipPos);
     _spawnShip(Team.red, redShipPos);
+
+    // Check if ships spawned in valid positions and fix if needed
+    await Future.delayed(const Duration(milliseconds: 100));
+    for (final ship in _ships) {
+      if (ship.model.isStuck) {
+        debugPrint("Ship ${ship.model.team} spawned stuck, unsticking...");
+        ship.model.unstick();
+      }
+    }
   }
 
   bool _isNearShore(Vector2 position) {

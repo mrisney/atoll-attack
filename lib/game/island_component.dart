@@ -337,6 +337,12 @@ class IslandComponent extends PositionComponent {
 
   // ==== REVISED: Set all uniforms for the new island_water.frag ====
   void _renderShaderIsland(Canvas canvas) {
+    // Ensure camera values are initialized
+    final currentCameraX = cameraX;
+    final currentCameraY = cameraY;
+    final currentViewW = viewW > 0 ? viewW : resolutionX;
+    final currentViewH = viewH > 0 ? viewH : resolutionY;
+
     shader!
       ..setFloat(0, amplitude)
       ..setFloat(1, wavelength)
@@ -347,10 +353,10 @@ class IslandComponent extends PositionComponent {
       ..setFloat(6, islandRadius)
       ..setFloat(7, 0.0) // mode: normal render
       ..setFloat(8, 0.0) // detection threshold
-      ..setFloat(9, cameraX) // u_camera_x
-      ..setFloat(10, cameraY) // u_camera_y
-      ..setFloat(11, viewW) // u_view_w
-      ..setFloat(12, viewH); // u_view_h
+      ..setFloat(9, currentCameraX) // u_camera_x
+      ..setFloat(10, currentCameraY) // u_camera_y
+      ..setFloat(11, currentViewW) // u_view_w
+      ..setFloat(12, currentViewH); // u_view_h
 
     final paint = Paint()..shader = shader;
     canvas.drawRect(

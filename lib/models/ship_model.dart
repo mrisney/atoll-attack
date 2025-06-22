@@ -1,4 +1,4 @@
-// lib/game/ship_model.dart - Ship model with pathfinding and collision detection
+// lib/models/ship_model.dart - Ship model with pathfinding and collision detection
 
 import 'dart:math' as math;
 import 'package:flame/components.dart';
@@ -172,6 +172,7 @@ class ShipModel {
   void _calculateNavigationPath() {
     if (targetPosition == null || isOnLandCallback == null) {
       navigationPath = null;
+      isNavigating = false;
       return;
     }
 
@@ -181,12 +182,31 @@ class ShipModel {
     // Simple pathfinding: if direct path is clear, use it
     if (_isPathClear(start, end)) {
       navigationPath = [end];
+      _currentWaypointIndex = 0;
       return;
     }
 
     // Find path around obstacles using waypoints
     List<Vector2> waypoints = _findWaypointsAroundObstacles(start, end);
-    navigationPath = waypoints;
+
+    // If no waypoints found, try direct movement anyway
+    if (waypoints.isEmpty) {
+      // Find the closest valid water position to the target
+      Vector2 closestValid = _findClosestValidPosition(end);
+      if (closestValid != position) {
+        navigationPath = [closestValid];
+        _currentWaypointIndex = 0;
+      } else {
+        // Can't find any path - stop navigation
+        navigationPath = null;
+        targetPosition = null;
+        isNavigating = false;
+        velocity = Vector2.zero();
+      }
+    } else {
+      navigationPath = waypoints;
+      _currentWaypointIndex = 0;
+    }
   }
 
   /// Check if a direct path between two points is clear of land
@@ -295,10 +315,14 @@ class ShipModel {
 
     // Update timers
     if (cannonCooldown > 0) cannonCooldown -= dt;
+
+    // Check if stuck and handle it
     if (isStuck) {
       _stuckTimer += dt;
-      if (_stuckTimer > _maxStuckTime) {
+      // Be more aggressive about unsticking - reduce time to 1 second
+      if (_stuckTimer > 1.0) {
         _forceUnstick();
+        return; // Skip rest of update after unsticking
       }
     }
 
@@ -317,8 +341,16 @@ class ShipModel {
 
     // Ensure we're always in valid water
     if (!_isValidShipPosition(position)) {
-      position.setFrom(_lastValidPosition ?? position);
-      isStuck = true;
+      // If we're in an invalid position, immediately try to fix it
+      Vector2 emergencyPos = _findEmergencyValidPosition();
+      if (_isValidShipPosition(emergencyPos)) {
+        position.setFrom(emergencyPos);
+        _lastValidPosition = position.clone();
+        isStuck = false;
+        _stuckTimer = 0.0;
+      } else {
+        isStuck = true;
+      }
     } else {
       _lastValidPosition = position.clone();
       isStuck = false;
@@ -337,6 +369,17 @@ class ShipModel {
     if (_pathUpdateTimer > _pathUpdateInterval || isStuck) {
       _calculateNavigationPath();
       _pathUpdateTimer = 0.0;
+    }
+
+    // Validate waypoint index before accessing
+    if (_currentWaypointIndex >= navigationPath!.length) {
+      // Path completed or invalid index
+      targetPosition = null;
+      navigationPath = null;
+      isNavigating = false;
+      velocity = Vector2.zero();
+      _currentWaypointIndex = 0;
+      return;
     }
 
     // Get current waypoint
@@ -497,7 +540,9 @@ class ShipModel {
 
   /// Force ship to unstick from land
   void _forceUnstick() {
-    if (_lastValidPosition != null) {
+    // Try to use last valid position first
+    if (_lastValidPosition != null &&
+        _isValidShipPosition(_lastValidPosition!)) {
       position.setFrom(_lastValidPosition!);
       velocity = Vector2.zero();
       isStuck = false;
@@ -507,6 +552,66 @@ class ShipModel {
       navigationPath = null;
       targetPosition = null;
       isNavigating = false;
+      return;
+    }
+
+    // If no valid last position, find a new valid position
+    Vector2 validPos = _findEmergencyValidPosition();
+    position.setFrom(validPos);
+    velocity = Vector2.zero();
+    isStuck = false;
+    _stuckTimer = 0.0;
+    _lastValidPosition = position.clone();
+
+    // Clear navigation
+    navigationPath = null;
+    targetPosition = null;
+    isNavigating = false;
+  }
+
+  /// Find an emergency valid position when ship is stuck with no last valid position
+  Vector2 _findEmergencyValidPosition() {
+    // Search in expanding circles from current position
+    for (double radius = 30.0; radius <= 200.0; radius += 10.0) {
+      // Try more angles for better coverage
+      for (int angle = 0; angle < 360; angle += 15) {
+        double rad = angle * math.pi / 180;
+        Vector2 testPos = position +
+            Vector2(
+              math.cos(rad) * radius,
+              math.sin(rad) * radius,
+            );
+
+        if (_isValidShipPosition(testPos)) {
+          // Additional check: make sure we're not too close to shore
+          bool tooCloseToLand = false;
+          for (int checkAngle = 0; checkAngle < 360; checkAngle += 45) {
+            double checkRad = checkAngle * math.pi / 180;
+            Vector2 checkPoint = testPos +
+                Vector2(
+                  math.cos(checkRad) * (radius + 20),
+                  math.sin(checkRad) * (radius + 20),
+                );
+            if (isOnLandCallback != null && isOnLandCallback!(checkPoint)) {
+              tooCloseToLand = true;
+              break;
+            }
+          }
+
+          if (!tooCloseToLand) {
+            return testPos;
+          }
+        }
+      }
+    }
+
+    // Last resort: move way out to sea based on team
+    if (team == Team.blue) {
+      // Blue team - move north
+      return Vector2(position.x, position.y - 150);
+    } else {
+      // Red team - move south
+      return Vector2(position.x, position.y + 150);
     }
   }
 
@@ -580,6 +685,11 @@ class ShipModel {
     navigationPath = null;
     isNavigating = false;
     velocity = Vector2.zero();
+  }
+
+  /// Manually unstick the ship - can be called externally
+  void unstick() {
+    _forceUnstick();
   }
 
   /// Get ship status for UI

@@ -58,11 +58,14 @@ class UnitSelectionManager {
 
   /// Handle tap on a ship - primary selection method for ships
   bool handleShipTap(ShipComponent tappedShip) {
-    // Clear unit selection when selecting ship
-    clearUnitSelection();
+    // If tapping the same ship that's already selected, deselect it
+    if (_selectedShips.contains(tappedShip)) {
+      clearSelection();
+      return true;
+    }
 
-    // Clear previous ship selection
-    clearShipSelection();
+    // Clear previous selection
+    clearSelection();
 
     // Select the tapped ship
     tappedShip.model.isSelected = true;
