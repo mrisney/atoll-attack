@@ -1,496 +1,285 @@
-// lib/services/webrtc_service.dart
+// lib/services/firebase_rtdb_service.dart
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
-final logger = Logger();
+class FirebaseRTDBService {
+  FirebaseRTDBService._();
+  static final FirebaseRTDBService instance = FirebaseRTDBService._();
 
-class WebRTCService {
-  static final WebRTCService instance = WebRTCService._();
-  WebRTCService._();
+  final _log = Logger();
+  final List<int> _rttSamples = [];
+  late String _gameCode;
+  String? _deviceId;
+  final _db = FirebaseDatabase.instance;
 
-  // WebRTC components
-  RTCPeerConnection? _peerConnection;
-  RTCDataChannel? _dataChannel;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Command stream controller
+  final StreamController<Map<String, dynamic>> _cmdCtrl =
+      StreamController.broadcast();
 
-  String? _currentGameCode;
-  String? _playerId;
-  String? _playerColor;
-  bool _isConnected = false;
-  bool _isInitiator = false;
+  // Subscriptions
+  StreamSubscription<DatabaseEvent>? _commandSubscription;
+  StreamSubscription<DatabaseEvent>? _connectionSubscription;
 
-  // Command handling
-  int _commandCounter = 0;
-  StreamController<Map<String, dynamic>>? _commandStreamController;
-  Stream<Map<String, dynamic>>? commandStream;
+  bool _initialized = false;
+  DatabaseReference? _gameRef;
 
-  // Latency tracking
-  final Map<String, int> _sentTimestamps = {};
-  final List<int> _latencyHistory = [];
-  int _averageLatency = 0;
-  Timer? _latencyTimer;
+  // Track processed commands to avoid duplicates
+  final Set<String> _processedCommands = {};
 
-  // Connection state callback
-  Function(bool)? onConnectionStateChanged;
+  /// True once initialize() completes without error
+  bool get isConnected => _initialized;
 
-  /// Initialize the WebRTC service with a game code
+  /// Your last RTT in ms
+  int? get lastRtt => _rttSamples.isEmpty ? null : _rttSamples.last;
+
+  /// Average RTT
+  double get avgRtt => _rttSamples.isEmpty
+      ? 0
+      : _rttSamples.reduce((a, b) => a + b) / _rttSamples.length;
+
+  /// Average latency (alias for avgRtt)
+  double get averageLatency => avgRtt;
+
+  /// Get latest RTT samples (for display)
+  List<int> get rttSamples => List.unmodifiable(_rttSamples);
+
+  /// Command stream for listening to incoming commands
+  Stream<Map<String, dynamic>> get commandStream => _cmdCtrl.stream;
+
+  /// Get or create a unique device ID
+  Future<String> _getDeviceId() async {
+    if (_deviceId != null) return _deviceId!;
+
+    final prefs = await SharedPreferences.getInstance();
+    var deviceId = prefs.getString('device_id');
+
+    if (deviceId == null) {
+      deviceId = const Uuid().v4();
+      await prefs.setString('device_id', deviceId);
+    }
+
+    _deviceId = deviceId;
+    return deviceId;
+  }
+
+  /// Initialize the RTDB service for a game
   Future<void> initialize(String gameCode) async {
+    _gameCode = gameCode;
+
+    // Ensure we have a device ID
+    await _getDeviceId();
+    _log.i(
+        '🔧 Initializing RTDB with device ID: ${_deviceId?.substring(0, 8)}...');
+
+    // Clear processed commands when reinitializing
+    _processedCommands.clear();
+
     try {
-      _currentGameCode = gameCode;
-      _playerId = FirebaseAuth.instance.currentUser?.uid;
+      // Set up game reference
+      _gameRef = _db.ref('games/$_gameCode');
 
-      logger.i('🎮 Initializing WebRTC for game: $gameCode');
-      logger.i('👤 Player ID: $_playerId');
+      // Enable offline persistence
+      await _db.setPersistenceEnabled(true);
+      await _gameRef!.keepSynced(true);
 
-      // Set up command stream
-      _commandStreamController =
-          StreamController<Map<String, dynamic>>.broadcast();
-      commandStream = _commandStreamController!.stream;
+      // Monitor connection state
+      _connectionSubscription = _db.ref('.info/connected').onValue.listen(
+        (event) {
+          final connected = event.snapshot.value as bool? ?? false;
+          _log.i(
+              '🔌 RTDB Connection: ${connected ? "Connected" : "Disconnected"}');
 
-      // Check if we're first or second player
-      await _determinePlayerRole();
+          if (connected && !_initialized) {
+            _initialized = true;
+            // Send join command when connected
+            sendCommand('join', {
+              'device_id': _deviceId,
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+          }
+        },
+      );
 
-      // Initialize WebRTC
-      await _initializeWebRTC();
+      // Listen for new commands
+      _commandSubscription = _gameRef!
+          .child('commands')
+          .orderByChild('timestamp')
+          .onChildAdded
+          .listen(
+        (event) {
+          _handleCommand(event.snapshot);
+        },
+        onError: (error) {
+          _log.e('❌ Command subscription error: $error');
+        },
+      );
 
-      // Start connection process
-      if (_isInitiator) {
-        await _createOffer();
-      } else {
-        await _waitForOffer();
-      }
-
-      logger.i('✅ WebRTC Service initialized successfully');
+      _log.i('✅ RTDB initialized for game $_gameCode');
     } catch (e) {
-      logger.e('❌ Failed to initialize WebRTC: $e');
+      _log.e('❌ Failed to initialize RTDB: $e');
+      _initialized = false;
       rethrow;
-    }
-  }
-
-  /// Determine if we're the initiator (first player) or joiner (second player)
-  Future<void> _determinePlayerRole() async {
-    try {
-      final gameRef = _firestore.collection('games').doc(_currentGameCode);
-      final snapshot = await gameRef.get();
-
-      if (!snapshot.exists) {
-        throw Exception('Game not found');
-      }
-
-      final data = snapshot.data()!;
-      final players = List<String>.from(data['players'] ?? []);
-
-      if (players.isEmpty || players.first == _playerId) {
-        _isInitiator = true;
-        _playerColor = 'blue';
-        logger.i('🔵 Acting as INITIATOR (blue player)');
-      } else {
-        _isInitiator = false;
-        _playerColor = 'red';
-        logger.i('🔴 Acting as JOINER (red player)');
-      }
-    } catch (e) {
-      logger.e('❌ Error determining player role: $e');
-      rethrow;
-    }
-  }
-
-  /// Initialize WebRTC peer connection
-  Future<void> _initializeWebRTC() async {
-    final configuration = {
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {'urls': 'stun:stun1.l.google.com:19302'},
-      ]
-    };
-
-    final constraints = {
-      'mandatory': {},
-      'optional': [
-        {'DtlsSrtpKeyAgreement': true},
-      ],
-    };
-
-    _peerConnection = await createPeerConnection(configuration, constraints);
-
-    // Set up ICE candidate handler
-    _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-      if (candidate.candidate != null) {
-        _sendSignalingMessage('ice-candidate', {
-          'candidate': candidate.candidate,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-          'sdpMid': candidate.sdpMid,
-        });
-      }
-    };
-
-    // Set up connection state handler
-    _peerConnection!.onConnectionState = (RTCPeerConnectionState state) {
-      logger.i('📡 Connection state: $state');
-
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-        _onConnected();
-      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
-        _onDisconnected();
-      }
-    };
-
-    // Set up data channel
-    if (_isInitiator) {
-      await _createDataChannel();
-    } else {
-      _peerConnection!.onDataChannel = (RTCDataChannel channel) {
-        _dataChannel = channel;
-        _setupDataChannel();
-      };
-    }
-  }
-
-  /// Create data channel for game commands
-  Future<void> _createDataChannel() async {
-    final channelConfig = RTCDataChannelInit()
-      ..ordered = true
-      ..maxRetransmits = 3;
-
-    _dataChannel = await _peerConnection!
-        .createDataChannel('game-commands', channelConfig);
-    _setupDataChannel();
-  }
-
-  /// Set up data channel event handlers
-  void _setupDataChannel() {
-    _dataChannel!.onDataChannelState = (RTCDataChannelState state) {
-      logger.i('📊 Data channel state: $state');
-
-      if (state == RTCDataChannelState.RTCDataChannelOpen) {
-        _isConnected = true;
-        onConnectionStateChanged?.call(true);
-        _startLatencyMonitoring();
-      } else if (state == RTCDataChannelState.RTCDataChannelClosed) {
-        _isConnected = false;
-        onConnectionStateChanged?.call(false);
-        _stopLatencyMonitoring();
-      }
-    };
-
-    _dataChannel!.onMessage = (RTCDataChannelMessage message) {
-      if (message.isBinary) {
-        logger.w('Received binary message, ignoring');
-        return;
-      }
-
-      try {
-        final data = jsonDecode(message.text);
-        _handleIncomingCommand(data);
-      } catch (e) {
-        logger.e('Error parsing message: $e');
-      }
-    };
-  }
-
-  /// Create WebRTC offer (initiator)
-  Future<void> _createOffer() async {
-    final offer = await _peerConnection!.createOffer();
-    await _peerConnection!.setLocalDescription(offer);
-
-    await _sendSignalingMessage('offer', {
-      'sdp': offer.sdp,
-      'type': offer.type,
-    });
-
-    // Listen for answer
-    _listenForSignaling();
-  }
-
-  /// Wait for WebRTC offer (joiner)
-  Future<void> _waitForOffer() async {
-    _listenForSignaling();
-  }
-
-  /// Listen for signaling messages via Firestore
-  void _listenForSignaling() {
-    final signalingRef = _firestore
-        .collection('games')
-        .doc(_currentGameCode)
-        .collection('signaling')
-        .where('to', isEqualTo: _playerId)
-        .where('processed', isEqualTo: false);
-
-    signalingRef.snapshots().listen((snapshot) async {
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        await _handleSignalingMessage(data);
-
-        // Mark as processed
-        await doc.reference.update({'processed': true});
-      }
-    });
-  }
-
-  /// Handle incoming signaling message
-  Future<void> _handleSignalingMessage(Map<String, dynamic> message) async {
-    final type = message['type'];
-    final payload = message['payload'];
-
-    logger.i('📨 Received signaling: $type');
-
-    switch (type) {
-      case 'offer':
-        final offer = RTCSessionDescription(payload['sdp'], payload['type']);
-        await _peerConnection!.setRemoteDescription(offer);
-
-        final answer = await _peerConnection!.createAnswer();
-        await _peerConnection!.setLocalDescription(answer);
-
-        await _sendSignalingMessage('answer', {
-          'sdp': answer.sdp,
-          'type': answer.type,
-        });
-        break;
-
-      case 'answer':
-        final answer = RTCSessionDescription(payload['sdp'], payload['type']);
-        await _peerConnection!.setRemoteDescription(answer);
-        break;
-
-      case 'ice-candidate':
-        final candidate = RTCIceCandidate(
-          payload['candidate'],
-          payload['sdpMid'],
-          payload['sdpMLineIndex'],
-        );
-        await _peerConnection!.addCandidate(candidate);
-        break;
-    }
-  }
-
-  /// Send signaling message via Firestore
-  Future<void> _sendSignalingMessage(
-      String type, Map<String, dynamic> payload) async {
-    final otherPlayerId = await _getOtherPlayerId();
-    if (otherPlayerId == null) {
-      logger.w('No other player to send signaling to');
-      return;
-    }
-
-    await _firestore
-        .collection('games')
-        .doc(_currentGameCode)
-        .collection('signaling')
-        .add({
-      'from': _playerId,
-      'to': otherPlayerId,
-      'type': type,
-      'payload': payload,
-      'timestamp': FieldValue.serverTimestamp(),
-      'processed': false,
-    });
-  }
-
-  /// Get the other player's ID
-  Future<String?> _getOtherPlayerId() async {
-    final gameRef = _firestore.collection('games').doc(_currentGameCode);
-    final snapshot = await gameRef.get();
-
-    if (!snapshot.exists) return null;
-
-    final players = List<String>.from(snapshot.data()!['players'] ?? []);
-    return players.firstWhere((id) => id != _playerId, orElse: () => '');
-  }
-
-  /// Handle connection established
-  void _onConnected() {
-    logger.i('✅ WebRTC connection established!');
-    _isConnected = true;
-
-    // Send initial join command
-    sendCommand('join', {
-      'playerId': _playerId,
-      'color': _playerColor,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-  }
-
-  /// Handle connection lost
-  void _onDisconnected() {
-    logger.w('⚠️ WebRTC connection lost');
-    _isConnected = false;
-    _stopLatencyMonitoring();
-  }
-
-  /// Send a command through the data channel
-  Future<void> sendCommand(String type, Map<String, dynamic> data,
-      {bool skipLogging = false}) async {
-    if (!_isConnected ||
-        _dataChannel == null ||
-        _dataChannel!.state != RTCDataChannelState.RTCDataChannelOpen) {
-      logger.e('❌ Cannot send command - not connected');
-      return;
-    }
-
-    try {
-      _commandCounter++;
-
-      final command = {
-        'id': '${_playerId}_${_commandCounter}',
-        'playerId': _playerId,
-        'playerColor': _playerColor,
-        'type': type,
-        'data': data,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-
-      final message = jsonEncode(command);
-      await _dataChannel!.send(RTCDataChannelMessage(message));
-
-      if (!skipLogging) {
-        logger.i('📤 Sent command: $type');
-      }
-    } catch (e) {
-      logger.e('❌ Failed to send command: $e');
     }
   }
 
   /// Handle incoming command
-  void _handleIncomingCommand(Map<String, dynamic> command) {
-    final isOwnCommand = command['playerId'] == _playerId;
+  void _handleCommand(DataSnapshot snapshot) {
+    try {
+      final key = snapshot.key;
+      if (key == null || _processedCommands.contains(key)) {
+        return; // Skip if already processed
+      }
 
-    // Handle ping/pong for latency measurement
-    if (command['type'] == 'ping' && !isOwnCommand) {
-      _handlePing(command);
+      _processedCommands.add(key);
+
+      // Clean up old processed commands to prevent memory growth
+      if (_processedCommands.length > 1000) {
+        final toRemove = _processedCommands.take(500).toList();
+        toRemove.forEach(_processedCommands.remove);
+      }
+
+      final data = snapshot.value as Map<Object?, Object?>?;
+      if (data == null) return;
+
+      // Convert to Map<String, dynamic>
+      final command = <String, dynamic>{};
+      data.forEach((key, value) {
+        if (key is String) {
+          command[key] = value;
+        }
+      });
+
+      final type = command['type'] as String? ?? '';
+      final senderId = command['sender_id'] as String? ?? 'unknown';
+      final payload = command['payload'] as Map<Object?, Object?>? ?? {};
+
+      // Convert payload to proper type
+      final typedPayload = <String, dynamic>{};
+      payload.forEach((key, value) {
+        if (key is String) {
+          typedPayload[key] = value;
+        }
+      });
+
+      // Handle ping/pong for latency measurement
+      if (type == 'ping' && senderId != _deviceId) {
+        // Respond to ping
+        final pingTs = typedPayload['ping_ts'] as int? ?? 0;
+        sendCommand('pong', {
+          'ping_ts': pingTs,
+          'pong_ts': DateTime.now().millisecondsSinceEpoch,
+        });
+      } else if (type == 'pong' && senderId != _deviceId) {
+        // Calculate RTT
+        final pingTs = typedPayload['ping_ts'] as int? ?? 0;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final rtt = now - pingTs;
+
+        _rttSamples.add(rtt);
+        if (_rttSamples.length > 10) {
+          _rttSamples.removeAt(0); // Keep last 10 samples
+        }
+
+        _log.i(
+            '🏓 Pong received, RTT = ${rtt}ms (avg: ${avgRtt.toStringAsFixed(1)}ms)');
+      } else if (senderId != _deviceId) {
+        // Forward other commands to the stream (skip our own commands)
+        _cmdCtrl.add({
+          'id': key,
+          'type': type,
+          'payload': typedPayload,
+          'sender_id': senderId,
+          'timestamp': command['timestamp'],
+        });
+
+        _log.i(
+            '📥 Command received: $type from ${senderId.substring(0, 8)}...');
+      }
+    } catch (e) {
+      _log.e('❌ Error handling command: $e');
+    }
+  }
+
+  /// Send a command
+  Future<void> sendCommand(String type, Map<String, dynamic> payload) async {
+    if (!_initialized || _gameRef == null) {
+      _log.w('⚠️ Cannot send command - not initialized');
       return;
-    } else if (command['type'] == 'pong' && !isOwnCommand) {
-      _handlePong(command);
-      return;
     }
 
-    // Forward to command stream
-    _commandStreamController?.add(command);
+    final deviceId = await _getDeviceId();
 
-    // Log command
-    if (!isOwnCommand ||
-        (command['type'] != 'ping' && command['type'] != 'pong')) {
-      final emoji = isOwnCommand ? '📤' : '📥';
-      final playerColor = command['playerColor'] ?? 'unknown';
+    try {
+      final command = {
+        'type': type,
+        'payload': payload,
+        'sender_id': deviceId,
+        'timestamp': ServerValue.timestamp,
+      };
 
-      logger.i('$emoji Command ${isOwnCommand ? "SENT" : "RECEIVED"} '
-          'from $playerColor player:');
-      logger.i('  Type: ${command['type']}');
-      logger.i('  Data: ${command['data']}');
-
-      if (!isOwnCommand) {
-        logger.w('🎯 OPPONENT ACTION: ${command['type']} - ${command['data']}');
-      }
-    }
-  }
-
-  /// Start latency monitoring
-  void _startLatencyMonitoring() {
-    _latencyTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (_isConnected) {
-        _sendPing();
-      }
-    });
-  }
-
-  /// Stop latency monitoring
-  void _stopLatencyMonitoring() {
-    _latencyTimer?.cancel();
-    _latencyTimer = null;
-  }
-
-  /// Send ping for latency measurement
-  Future<void> _sendPing() async {
-    final pingId = 'ping_${DateTime.now().millisecondsSinceEpoch}';
-    _sentTimestamps[pingId] = DateTime.now().millisecondsSinceEpoch;
-
-    await sendCommand(
-        'ping',
-        {
-          'pingId': pingId,
-          'clientTime': DateTime.now().millisecondsSinceEpoch,
-        },
-        skipLogging: true);
-  }
-
-  /// Handle incoming ping
-  void _handlePing(Map<String, dynamic> command) {
-    final pingData = command['data'] as Map;
-    sendCommand(
-        'pong',
-        {
-          'pingId': pingData['pingId'],
-          'originalTime': pingData['clientTime'],
-          'responseTime': DateTime.now().millisecondsSinceEpoch,
-        },
-        skipLogging: true);
-  }
-
-  /// Handle incoming pong
-  void _handlePong(Map<String, dynamic> command) {
-    final pongData = command['data'] as Map;
-    final pingId = pongData['pingId'];
-
-    if (_sentTimestamps.containsKey(pingId)) {
-      final sentTime = _sentTimestamps[pingId]!;
-      final currentTime = DateTime.now().millisecondsSinceEpoch;
-      final roundTripTime = currentTime - sentTime;
-      final latency = roundTripTime ~/ 2;
-
-      _latencyHistory.add(latency);
-      if (_latencyHistory.length > 10) {
-        _latencyHistory.removeAt(0);
+      // Add timestamp to payload for ping
+      if (type == 'ping') {
+        command['payload'] = {
+          ...payload,
+          'ping_ts': DateTime.now().millisecondsSinceEpoch,
+        };
       }
 
-      _averageLatency =
-          _latencyHistory.reduce((a, b) => a + b) ~/ _latencyHistory.length;
+      await _gameRef!.child('commands').push().set(command);
 
-      logger.i('📡 WebRTC Latency: ${latency}ms (avg: ${_averageLatency}ms)');
-
-      _sentTimestamps.remove(pingId);
+      _log.i('📤 Sent command: $type');
+    } catch (e) {
+      _log.e('❌ Failed to send command "$type": $e');
     }
   }
 
-  /// Send a test command
-  Future<void> sendTestCommand() async {
-    await sendCommand('test', {
-      'message': 'Hello from $_playerColor player via WebRTC!',
-      'counter': _commandCounter,
-      'time': DateTime.now().toIso8601String(),
-    });
+  /// Send a ping to measure latency
+  Future<void> sendPing() async {
+    await sendCommand('ping', {});
   }
 
   /// Clean up resources
   Future<void> dispose() async {
-    logger.i('🔌 Disconnecting WebRTC service...');
+    _log.i('🔌 Disposing RTDB service...');
 
-    _stopLatencyMonitoring();
-
-    if (_isConnected) {
-      await sendCommand('leave', {
-        'playerId': _playerId,
-        'color': _playerColor,
-      });
+    // Send leave command if connected
+    if (_initialized) {
+      try {
+        await sendCommand('leave', {
+          'device_id': _deviceId,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      } catch (e) {
+        _log.e('Error sending leave command: $e');
+      }
     }
 
-    await _dataChannel?.close();
-    await _peerConnection?.close();
-    await _commandStreamController?.close();
+    // Cancel subscriptions
+    await _commandSubscription?.cancel();
+    await _connectionSubscription?.cancel();
 
-    _isConnected = false;
+    // Stop syncing
+    if (_gameRef != null) {
+      await _gameRef!.keepSynced(false);
+    }
 
-    logger.i('👋 WebRTC service disposed');
+    // Close stream controller
+    await _cmdCtrl.close();
+
+    // Reset state
+    _initialized = false;
+    _processedCommands.clear();
+    _rttSamples.clear();
+
+    _log.i('👋 RTDB service disposed');
   }
 
-  // Getters
-  bool get isConnected => _isConnected;
-  String? get playerColor => _playerColor;
-  String? get playerId => _playerId;
-  int get averageLatency => _averageLatency;
-  List<int> get latencyHistory => List.unmodifiable(_latencyHistory);
+  /// Get database reference for direct access (testing)
+  DatabaseReference? get gameRef => _gameRef;
+
+  /// Check if we have an active game reference
+  bool get hasGameRef => _gameRef != null;
 }
