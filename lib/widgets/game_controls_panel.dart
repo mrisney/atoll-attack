@@ -12,7 +12,7 @@ import '../services/supabase_service.dart';
 
 final _log = Logger();
 
-class GameControlsPanel extends ConsumerWidget {
+class GameControlsPanel extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
 
   /// if false, still shows the test section but grayed out
@@ -25,7 +25,37 @@ class GameControlsPanel extends ConsumerWidget {
   }) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GameControlsPanel> createState() => _GameControlsPanelState();
+}
+
+class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
+  final List<String> _messageHistory = [];
+  final TextEditingController _messageController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for incoming messages
+    SupabaseService.instance.commandStream.listen((cmd) {
+      if (cmd['type'] == 'message' || cmd['type'] == 'test') {
+        final payload = cmd['payload'] as Map<String, dynamic>? ?? {};
+        final msg = payload['msg'] ?? payload['message'] ?? 'Unknown';
+        setState(() {
+          _messageHistory.add('← $msg');
+          if (_messageHistory.length > 5) _messageHistory.removeAt(0);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final game = ref.watch(gameProvider);
     final unitCounts = ref.watch(unitCountsProvider);
 
@@ -35,7 +65,7 @@ class GameControlsPanel extends ConsumerWidget {
     final avgRtt = supa.avgRtt.toStringAsFixed(1);
 
     _log.d(
-      '🔄 GameControlsPanel – useMultiplayer=$useMultiplayer '
+      '🔄 GameControlsPanel – useMultiplayer=${widget.useMultiplayer} '
       'Supabase.connected=$connected lastRtt=${lastRtt ?? '-'}ms avg=${avgRtt}ms',
     );
 
@@ -48,7 +78,7 @@ class GameControlsPanel extends ConsumerWidget {
         constraints: BoxConstraints(
           maxWidth: isLandscape ? 600 : 350,
           minWidth: 280,
-          maxHeight: isLandscape ? screen.height * 0.6 : 300,
+          maxHeight: isLandscape ? screen.height * 0.6 : 400,
         ),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
@@ -144,6 +174,77 @@ class GameControlsPanel extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 8),
+
+        // Message input and send
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Type message...',
+                  hintStyle: TextStyle(color: Colors.white54, fontSize: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.cyan),
+                  ),
+                ),
+                onSubmitted: connected ? (_) => _sendMessage() : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.send, size: 20),
+              color: Colors.cyan,
+              onPressed: connected ? _sendMessage : null,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 8),
+
+        // Message history
+        if (_messageHistory.isNotEmpty) ...[
+          Container(
+            height: 60,
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: ListView.builder(
+              itemCount: _messageHistory.length,
+              itemBuilder: (context, index) {
+                final msg = _messageHistory[index];
+                final isSent = msg.startsWith('→');
+                return Text(
+                  msg,
+                  style: TextStyle(
+                    color: isSent ? Colors.cyan : Colors.greenAccent,
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -151,7 +252,7 @@ class GameControlsPanel extends ConsumerWidget {
             _testBtn('Ping', Icons.network_ping,
                 connected ? SupabaseService.instance.sendPing : null),
             _testBtn(
-                'Echo',
+                'Test',
                 Icons.message,
                 connected
                     ? () => SupabaseService.instance
@@ -170,6 +271,18 @@ class GameControlsPanel extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  void _sendMessage() {
+    final msg = _messageController.text.trim();
+    if (msg.isEmpty) return;
+
+    SupabaseService.instance.sendCommand('message', {'message': msg});
+    setState(() {
+      _messageHistory.add('→ $msg');
+      if (_messageHistory.length > 5) _messageHistory.removeAt(0);
+    });
+    _messageController.clear();
   }
 
   Widget _stat(String label, String val, Color color) {
@@ -208,9 +321,9 @@ class GameControlsPanel extends ConsumerWidget {
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.bold)),
-          if (onClose != null)
+          if (widget.onClose != null)
             GestureDetector(
-                onTap: onClose,
+                onTap: widget.onClose,
                 child: const Icon(Icons.close, color: Colors.white70)),
         ],
       );

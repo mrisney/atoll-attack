@@ -80,12 +80,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         final t = rec['type'] ?? 'unknown';
         final p = rec['payload'] ?? {};
         _log.i('Cmd recv: $t → $p');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Cmd: $t → $p'),
-                duration: const Duration(seconds: 2)),
-          );
+
+        // Show snackbar for messages
+        if (t == 'message' || t == 'test') {
+          final msg = p['message'] ?? p['msg'] ?? 'Unknown message';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.message, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(msg)),
+                  ],
+                ),
+                backgroundColor: Colors.cyan.shade700,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
         }
       });
     } catch (e) {
@@ -302,12 +315,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           Positioned(
             bottom: media.padding.bottom + 70,
             right: 16,
-            child: FloatingActionButton.small(
-              onPressed: () {
-                SupabaseService.instance.sendCommand('test', {'msg': 'Hello'});
-              },
-              backgroundColor: Colors.purple,
-              child: const Icon(Icons.send, size: 16),
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  onPressed: () {
+                    SupabaseService.instance
+                        .sendCommand('test', {'msg': 'Quick test!'});
+                  },
+                  backgroundColor: Colors.purple,
+                  child: const Icon(Icons.send, size: 16),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: () {
+                    SupabaseService.instance.sendPing();
+                  },
+                  backgroundColor: Colors.cyan,
+                  child: const Icon(Icons.network_ping, size: 16),
+                ),
+              ],
             ),
           ),
       ]),
