@@ -1,5 +1,10 @@
-// config.dart - Global game configuration constants
+// constants/game_config.dart - Global game configuration constants
 import 'package:flame/components.dart';
+
+/// Supabase configuration constants
+const String supabaseUrl = 'https://urebhhsczqwzoyvwmjhi.supabase.co';
+const String supabaseAnonKey =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyZWJoaHNjenF3em95dndtamhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA2MzQ2MjYsImV4cCI6MjA2NjIxMDYyNn0.dyaS7uNFqUBjhEFKYqjha8ZBvYr2mRDRkkm0qoel85A';
 
 // Default island settings
 const double kDefaultAmplitude = 1.9;

@@ -1,14 +1,22 @@
 // lib/main.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+// Firebase
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart'; // ← your generated options
+
+// Supabase
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
 import 'package:logger/logger.dart';
 
-import 'firebase_options.dart';
+import 'constants/game_config.dart';
 import 'screens/game_screen.dart';
 
 final logger = Logger();
@@ -16,14 +24,29 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await FirebaseAuth.instance.signInAnonymously();
-  logger.i("🔥 Firebase initialized");
 
+  // 1) Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  await FirebaseAuth.instance.signInAnonymously();
+
+  // 2) Initialize Supabase
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+    realtimeClientOptions: const RealtimeClientOptions(eventsPerSecond: 40),
+  );
+
+  // 3) Load last game code
   final prefs = await SharedPreferences.getInstance();
   final lastCode = prefs.getString('lastGameCode');
 
-  runApp(ProviderScope(child: AtollAttackApp(initialInviteCode: lastCode)));
+  runApp(
+    ProviderScope(
+      child: AtollAttackApp(initialInviteCode: lastCode),
+    ),
+  );
 }
 
 class AtollAttackApp extends StatefulWidget {
@@ -41,15 +64,16 @@ class _AtollAttackAppState extends State<AtollAttackApp> {
   @override
   void initState() {
     super.initState();
-    _sub = _appLinks.uriLinkStream.listen((uri) {
-      if (uri != null) _handleDeepLink(uri);
-    }, onError: (err) {
-      logger.e("Deep link error: $err");
-    });
+    _sub = _appLinks.uriLinkStream.listen(
+      (uri) {
+        if (uri != null) _handleDeepLink(uri);
+      },
+      onError: (err) => logger.e('Deep link error: $err'),
+    );
   }
 
   void _handleDeepLink(Uri uri) {
-    logger.i("Deep link received: $uri");
+    logger.i('Deep link received: $uri');
     String? code;
     if (uri.scheme == 'https' &&
         uri.host == 'link.atoll-attack.com' &&
@@ -58,7 +82,7 @@ class _AtollAttackAppState extends State<AtollAttackApp> {
     } else if (uri.scheme == 'atoll' && uri.host == 'join') {
       code = uri.queryParameters['code'];
     }
-    if (code != null && code.isNotEmpty) {
+    if (code?.isNotEmpty == true) {
       navigatorKey.currentState?.pushReplacement(
         MaterialPageRoute(builder: (_) => GameScreen(gameCode: code)),
       );

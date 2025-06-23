@@ -31,6 +31,8 @@ dependencies:
   app_links: ^6.4.0
   share_plus: ^11.0.0
   logger: ^2.5.0
+  flutter_webrtc: ^0.14.1
+  supabase_flutter: ^2.9.1
 
 
 dev_dependencies:

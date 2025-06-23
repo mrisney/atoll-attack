@@ -1,21 +1,46 @@
 // lib/widgets/game_controls_panel.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../providers/game_provider.dart';
 import '../models/unit_model.dart';
 import '../constants/game_config.dart';
 
+// ← swap out WebRTCService for SupabaseService
+import '../services/supabase_service.dart';
+
+final _log = Logger();
+
 class GameControlsPanel extends ConsumerWidget {
   final VoidCallback? onClose;
-  const GameControlsPanel({Key? key, this.onClose}) : super(key: key);
+
+  /// if false, still shows the test section but grayed out
+  final bool useMultiplayer;
+
+  const GameControlsPanel({
+    Key? key,
+    this.onClose,
+    this.useMultiplayer = true,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final game = ref.watch(gameProvider);
     final unitCounts = ref.watch(unitCountsProvider);
 
-    final screenSize = MediaQuery.of(context).size;
-    final isLandscape = screenSize.width > screenSize.height;
+    final supa = SupabaseService.instance;
+    final connected = supa.isConnected;
+    final lastRtt = supa.lastRtt;
+    final avgRtt = supa.avgRtt.toStringAsFixed(1);
+
+    _log.d(
+      '🔄 GameControlsPanel – useMultiplayer=$useMultiplayer '
+      'Supabase.connected=$connected lastRtt=${lastRtt ?? '-'}ms avg=${avgRtt}ms',
+    );
+
+    final screen = MediaQuery.of(context).size;
+    final isLandscape = screen.width > screen.height;
 
     return Material(
       color: Colors.transparent,
@@ -23,364 +48,374 @@ class GameControlsPanel extends ConsumerWidget {
         constraints: BoxConstraints(
           maxWidth: isLandscape ? 600 : 350,
           minWidth: 280,
-          maxHeight: isLandscape ? screenSize.height * 0.6 : 220,
+          maxHeight: isLandscape ? screen.height * 0.6 : 300,
         ),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          child: isLandscape
-              ? _buildCompactLandscapeLayout(context, unitCounts, game)
-              : _buildPortraitLayout(context, unitCounts, game),
+          child: Column(
+            children: [
+              if (isLandscape)
+                _buildCompactLandscape(context, unitCounts, game)
+              else
+                _buildPortrait(context, unitCounts, game),
+
+              // divider + test section
+              const Divider(color: Colors.white24),
+              _buildTestSection(context, connected, lastRtt, avgRtt),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPortraitLayout(
-      BuildContext context, Map<String, int> unitCounts, game) {
+  Widget _buildPortrait(BuildContext c, Map<String, int> uc, game) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header
         _buildHeader(),
         const SizedBox(height: 8),
-        // Unit counts
-        _buildCompactUnitCountDisplay(unitCounts),
+        _buildCompactUnitCountDisplay(uc),
         const SizedBox(height: 8),
-        // Spawn buttons
-        _buildPortraitSpawnButtons(unitCounts, game),
+        _buildPortraitSpawn(c, uc, game),
         const SizedBox(height: 4),
-        // Instructions
         _buildInstructions(9),
       ],
     );
   }
 
-  Widget _buildCompactLandscapeLayout(
-      BuildContext context, Map<String, int> unitCounts, game) {
+  Widget _buildCompactLandscape(BuildContext c, Map<String, int> uc, game) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header with counts
         Row(
           children: [
             Expanded(child: _buildHeader()),
-            _buildLandscapeUnitCounts(unitCounts),
+            _buildLandscapeCounts(uc),
           ],
         ),
         const SizedBox(height: 8),
-        // Horizontal spawn buttons
-        _buildLandscapeSpawnButtons(unitCounts, game),
+        _buildLandscapeSpawn(c, uc, game),
         const SizedBox(height: 4),
         _buildInstructions(10),
       ],
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildTestSection(
+      BuildContext c, bool connected, int? last, String avg) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Spawn Units',
+        Row(
+          children: [
+            Icon(Icons.cloud,
+                color: connected ? Colors.green : Colors.red, size: 14),
+            const SizedBox(width: 8),
+            Text(
+              'Supabase Test',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            IconButton(
+              icon:
+                  const Icon(Icons.network_ping, size: 20, color: Colors.cyan),
+              onPressed: connected ? SupabaseService.instance.sendPing : null,
+              tooltip: 'Send Ping',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _stat('Last', last != null ? '$last ms' : '--', Colors.orange),
+            _stat('Avg', '$avg ms', Colors.green),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _testBtn('Ping', Icons.network_ping,
+                connected ? SupabaseService.instance.sendPing : null),
+            _testBtn(
+                'Echo',
+                Icons.message,
+                connected
+                    ? () => SupabaseService.instance
+                        .sendCommand('test', {'msg': 'Hello from UI'})
+                    : null),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          connected ? 'Connected' : 'Disconnected',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
+            color: connected ? Colors.greenAccent : Colors.orangeAccent,
+            fontSize: 10,
+            fontStyle: FontStyle.italic,
           ),
         ),
-        if (onClose != null)
-          GestureDetector(
-            onTap: onClose,
-            child: const Icon(Icons.close, color: Colors.white70, size: 18),
-          ),
       ],
     );
   }
 
-  Widget _buildLandscapeUnitCounts(Map<String, int> unitCounts) {
+  Widget _stat(String label, String val, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: const TextStyle(color: Colors.white70, fontSize: 10)),
+        Text(val,
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _testBtn(String label, IconData icon, VoidCallback? onTap) {
+    return ElevatedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor:
+            onTap != null ? Colors.purple.shade700 : Colors.grey.shade600,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+    );
+  }
+
+  Widget _buildHeader() => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('Spawn Units',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold)),
+          if (onClose != null)
+            GestureDetector(
+                onTap: onClose,
+                child: const Icon(Icons.close, color: Colors.white70)),
+        ],
+      );
+
+  Widget _buildLandscapeCounts(Map<String, int> uc) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(6),
-      ),
+          color: Colors.grey.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(6)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildMiniTeamCount('B', Colors.blue, unitCounts, true),
+          _mini('B', Colors.blue, uc, true),
           const SizedBox(width: 12),
-          _buildMiniTeamCount('R', Colors.red, unitCounts, false),
+          _mini('R', Colors.red, uc, false),
         ],
       ),
     );
   }
 
-  Widget _buildMiniTeamCount(
-      String label, Color color, Map<String, int> unitCounts, bool isBlue) {
-    String prefix = isBlue ? 'blue' : 'red';
+  Widget _mini(String label, Color color, Map<String, int> uc, bool blue) {
+    final p = blue ? 'blue' : 'red';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(height: 2),
-        Text(
-          '${unitCounts['${prefix}Remaining']}',
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        Text('${uc['${p}Remaining']}',
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _buildCompactUnitCountDisplay(Map<String, int> unitCounts) {
+  Widget _buildCompactUnitCountDisplay(Map<String, int> uc) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(6),
-      ),
+          color: Colors.grey.withOpacity(0.25),
+          borderRadius: BorderRadius.circular(6)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildTeamInfo('Blue', unitCounts, Colors.blue, true),
-          Container(
-            height: 35,
-            width: 1,
-            color: Colors.white.withOpacity(0.3),
-          ),
-          _buildTeamInfo('Red', unitCounts, Colors.red, false),
+          _team('Blue', uc, Colors.blue, true),
+          Container(height: 35, width: 1, color: Colors.white.withOpacity(0.3)),
+          _team('Red', uc, Colors.red, false),
         ],
       ),
     );
   }
 
-  Widget _buildTeamInfo(
-      String team, Map<String, int> unitCounts, Color color, bool isBlue) {
-    String prefix = isBlue ? 'blue' : 'red';
+  Widget _team(String name, Map<String, int> uc, Color color, bool blue) {
+    final p = blue ? 'blue' : 'red';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
+        Row(children: [
+          Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 3),
-            Text(
-              team,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 3),
+          Text(name,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600)),
+        ]),
         const SizedBox(height: 2),
         Text(
-          'C:${unitCounts['${prefix}CaptainsRemaining']} '
-          'A:${unitCounts['${prefix}ArchersRemaining']} '
-          'S:${unitCounts['${prefix}SwordsmenRemaining']}',
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 8,
-          ),
+          'C:${uc['${p}CaptainsRemaining']} '
+          'A:${uc['${p}ArchersRemaining']} '
+          'S:${uc['${p}SwordsmenRemaining']}',
+          style: const TextStyle(color: Colors.white70, fontSize: 8),
         ),
-        Text(
-          'Total: ${unitCounts['${prefix}Remaining']}',
-          style: TextStyle(
-            color: color,
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-          ),
+        Text('Total: ${uc['${p}Remaining']}',
+            style: TextStyle(
+                color: color, fontSize: 9, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _buildPortraitSpawn(BuildContext c, Map<String, int> uc, game) {
+    return Row(
+      children: [
+        Expanded(child: _teamColumn('Blue', uc, game, Team.blue)),
+        const SizedBox(width: 8),
+        Expanded(child: _teamColumn('Red', uc, game, Team.red)),
+      ],
+    );
+  }
+
+  Widget _teamColumn(String label, Map<String, int> uc, game, Team team) {
+    final base = team == Team.blue ? Colors.blue.shade400 : Colors.red.shade400;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: TextStyle(color: base, fontSize: 10)),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: _unitButtons(uc, game, team, false),
         ),
       ],
     );
   }
 
-  Widget _buildPortraitSpawnButtons(Map<String, int> unitCounts, game) {
+  Widget _buildLandscapeSpawn(BuildContext c, Map<String, int> uc, game) {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Blue',
-                style: TextStyle(color: Colors.blue.shade400, fontSize: 10),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _buildUnitButtons(unitCounts, game, Team.blue, false),
-              ),
-            ],
-          ),
-        ),
+            child: _spawnRow(
+                uc, game, Team.blue, true, Colors.blue.withOpacity(0.1))),
         const SizedBox(width: 8),
         Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Red',
-                style: TextStyle(color: Colors.red.shade400, fontSize: 10),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _buildUnitButtons(unitCounts, game, Team.red, false),
-              ),
-            ],
-          ),
-        ),
+            child: _spawnRow(
+                uc, game, Team.red, true, Colors.red.withOpacity(0.1))),
       ],
     );
   }
 
-  Widget _buildLandscapeSpawnButtons(Map<String, int> unitCounts, game) {
-    return Row(
-      children: [
-        // Blue team
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _buildUnitButtons(unitCounts, game, Team.blue, true),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Red team
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _buildUnitButtons(unitCounts, game, Team.red, true),
-            ),
-          ),
-        ),
-      ],
+  Widget _spawnRow(Map<String, int> uc, game, Team team, bool land, Color bg) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: _unitButtons(uc, game, team, land)),
     );
   }
 
-  List<Widget> _buildUnitButtons(
-      Map<String, int> unitCounts, game, Team team, bool isLandscape) {
-    final prefix = team == Team.blue ? 'blue' : 'red';
-    final baseColor = team == Team.blue ? Colors.blue : Colors.red;
-
+  List<Widget> _unitButtons(
+      Map<String, int> uc, game, Team team, bool landscape) {
+    final p = team == Team.blue ? 'blue' : 'red';
+    final c = team == Team.blue ? Colors.blue : Colors.red;
     return [
-      _buildCompactButton(
-        'C',
-        Icons.star,
-        baseColor.shade700,
-        () => game.spawnSingleUnit(UnitType.captain, team),
-        unitCounts['${prefix}CaptainsRemaining']! > 0,
-        unitCounts['${prefix}CaptainsRemaining']!,
-        isLandscape,
-      ),
-      _buildCompactButton(
-        'A',
-        Icons.sports_esports,
-        baseColor.shade500,
-        () => game.spawnSingleUnit(UnitType.archer, team),
-        unitCounts['${prefix}ArchersRemaining']! > 0,
-        unitCounts['${prefix}ArchersRemaining']!,
-        isLandscape,
-      ),
-      _buildCompactButton(
-        'S',
-        Icons.shield,
-        baseColor.shade300,
-        () => game.spawnSingleUnit(UnitType.swordsman, team),
-        unitCounts['${prefix}SwordsmenRemaining']! > 0,
-        unitCounts['${prefix}SwordsmenRemaining']!,
-        isLandscape,
-      ),
+      _btn(
+          'C',
+          Icons.star,
+          c.shade700,
+          () => game.spawnSingleUnit(UnitType.captain, team),
+          uc['${p}CaptainsRemaining']! > 0,
+          uc['${p}CaptainsRemaining']!,
+          landscape),
+      _btn(
+          'A',
+          Icons.sports_esports,
+          c.shade500,
+          () => game.spawnSingleUnit(UnitType.archer, team),
+          uc['${p}ArchersRemaining']! > 0,
+          uc['${p}ArchersRemaining']!,
+          landscape),
+      _btn(
+          'S',
+          Icons.shield,
+          c.shade300,
+          () => game.spawnSingleUnit(UnitType.swordsman, team),
+          uc['${p}SwordsmenRemaining']! > 0,
+          uc['${p}SwordsmenRemaining']!,
+          landscape),
     ];
   }
 
-  Widget _buildCompactButton(String label, IconData icon, Color color,
-      VoidCallback onPressed, bool enabled, int count, bool isLandscape) {
-    final size = isLandscape ? 50.0 : 45.0;
-    final iconSize = isLandscape ? 14.0 : 12.0;
-
+  Widget _btn(String lbl, IconData ic, Color col, VoidCallback onTap, bool ok,
+      int cnt, bool landscape) {
+    final s = landscape ? 50.0 : 45.0, isz = landscape ? 14.0 : 12.0;
     return SizedBox(
-      width: size,
-      height: size,
+      width: s,
+      height: s,
       child: ElevatedButton(
-        onPressed: enabled ? onPressed : null,
+        onPressed: ok ? onTap : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: enabled ? color : Colors.grey.shade600,
+          backgroundColor: ok ? col : Colors.grey.shade600,
           padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: iconSize, color: Colors.white),
-            Text(label,
-                style: TextStyle(
-                    fontSize: isLandscape ? 9 : 8, color: Colors.white)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-              decoration: BoxDecoration(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(ic, size: isz, color: Colors.white),
+          Text(lbl,
+              style:
+                  TextStyle(fontSize: landscape ? 9 : 8, color: Colors.white)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+            decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                '$count',
+                borderRadius: BorderRadius.circular(3)),
+            child: Text('$cnt',
                 style: TextStyle(
-                  fontSize: isLandscape ? 8 : 7,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
+                    fontSize: landscape ? 8 : 7,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white)),
+          )
+        ]),
       ),
     );
   }
 
-  Widget _buildInstructions(double fontSize) {
-    return Text(
-      'Drag to select • Tap to move • Tap buttons to spawn',
-      style: TextStyle(
-        color: Colors.white.withOpacity(0.6),
-        fontSize: fontSize,
-      ),
-      textAlign: TextAlign.center,
-    );
-  }
+  Widget _buildInstructions(double sz) => Text(
+        'Drag to select • Tap to move • Tap buttons to spawn',
+        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: sz),
+        textAlign: TextAlign.center,
+      );
 }
