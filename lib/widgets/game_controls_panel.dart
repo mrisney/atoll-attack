@@ -7,8 +7,8 @@ import '../providers/game_provider.dart';
 import '../models/unit_model.dart';
 import '../constants/game_config.dart';
 
-// ← swap out WebRTCService for SupabaseService
-import '../services/supabase_service.dart';
+// ← swap out SupabaseService for FirebaseRTDBService
+import '../services/rtdb_service.dart';
 
 final _log = Logger();
 
@@ -36,7 +36,7 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
   void initState() {
     super.initState();
     // Listen for incoming messages
-    SupabaseService.instance.commandStream.listen((cmd) {
+    FirebaseRTDBService.instance.commandStream.listen((cmd) {
       if (cmd['type'] == 'message' || cmd['type'] == 'test') {
         final payload = cmd['payload'] as Map<String, dynamic>? ?? {};
         final msg = payload['msg'] ?? payload['message'] ?? 'Unknown';
@@ -59,15 +59,29 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
     final game = ref.watch(gameProvider);
     final unitCounts = ref.watch(unitCountsProvider);
 
-    final supa = SupabaseService.instance;
-    final connected = supa.isConnected;
-    final lastRtt = supa.lastRtt;
-    final avgRtt = supa.avgRtt.toStringAsFixed(1);
+    // Cache Firebase connection status to avoid expensive calls during builds
+    final rtdb = FirebaseRTDBService.instance;
+    bool connected = false;
+    int? lastRtt;
+    String avgRtt = '0.0';
+    
+    try {
+      connected = rtdb.isConnected;
+      if (connected) {
+        lastRtt = rtdb.lastRtt;
+        avgRtt = rtdb.avgRtt.toStringAsFixed(1);
+      }
+    } catch (e) {
+      // Ignore Firebase connection errors during build
+    }
 
-    _log.d(
-      '🔄 GameControlsPanel – useMultiplayer=${widget.useMultiplayer} '
-      'Supabase.connected=$connected lastRtt=${lastRtt ?? '-'}ms avg=${avgRtt}ms',
-    );
+    // Only log when connected to reduce spam
+    if (connected) {
+      _log.d(
+        '🔄 GameControlsPanel – useMultiplayer=${widget.useMultiplayer} '
+        'Firebase.connected=$connected lastRtt=${lastRtt ?? '-'}ms avg=${avgRtt}ms',
+      );
+    }
 
     final screen = MediaQuery.of(context).size;
     final isLandscape = screen.width > screen.height;
@@ -148,7 +162,7 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
                 color: connected ? Colors.green : Colors.red, size: 14),
             const SizedBox(width: 8),
             Text(
-              'Supabase Test',
+              'Firebase RTDB Test',
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -158,7 +172,8 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
             IconButton(
               icon:
                   const Icon(Icons.network_ping, size: 20, color: Colors.cyan),
-              onPressed: connected ? SupabaseService.instance.sendPing : null,
+              onPressed:
+                  connected ? FirebaseRTDBService.instance.sendPing : null,
               tooltip: 'Send Ping',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -250,12 +265,12 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
           runSpacing: 8,
           children: [
             _testBtn('Ping', Icons.network_ping,
-                connected ? SupabaseService.instance.sendPing : null),
+                connected ? FirebaseRTDBService.instance.sendPing : null),
             _testBtn(
                 'Test',
                 Icons.message,
                 connected
-                    ? () => SupabaseService.instance
+                    ? () => FirebaseRTDBService.instance
                         .sendCommand('test', {'msg': 'Hello from UI'})
                     : null),
           ],
@@ -277,7 +292,7 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
     final msg = _messageController.text.trim();
     if (msg.isEmpty) return;
 
-    SupabaseService.instance.sendCommand('message', {'message': msg});
+    FirebaseRTDBService.instance.sendCommand('message', {'message': msg});
     setState(() {
       _messageHistory.add('→ $msg');
       if (_messageHistory.length > 5) _messageHistory.removeAt(0);

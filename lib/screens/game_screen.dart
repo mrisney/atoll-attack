@@ -7,8 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
 
 import '../models/game_doc.dart';
-import '../services/share_service.dart';
-import '../services/supabase_service.dart';
+// import '../services/share_service.dart'; // TODO: Re-enable for multiplayer
+import '../services/rtdb_service.dart';
+
 import '../providers/game_provider.dart';
 import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
@@ -28,7 +29,7 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen> {
   StreamSubscription<GameDoc>? _joinSub;
-  StreamSubscription<Map<String, dynamic>>? _cmdSub;
+
   Timer? _rttTimer;
 
   bool showPanel = false;
@@ -45,9 +46,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final code = widget.gameCode;
     if (code != null) {
       _persistGameCode(code);
-      _initializeSupabaseComm(code);
-
-      // still use Firestore for invite-join notifications
+      _initializeFirebaseRTDB(code);
+      
+      // TODO: Re-enable ShareService for multiplayer
+      /*
       ShareService.instance.listenForJoin(code, (GameDoc doc) {
         setState(() {
           _opponentJoined = true;
@@ -61,6 +63,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           });
         });
       }).then((sub) => _joinSub = sub);
+      */
     }
 
     // refresh RTT display every second
@@ -69,43 +72,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     });
   }
 
-  Future<void> _initializeSupabaseComm(String code) async {
-    try {
-      final supa = SupabaseService.instance;
-      await supa.initialize(code);
 
-      _showStatus('Supabase Connected!', Colors.green);
-
-      _cmdSub = supa.commandStream.listen((rec) {
-        final t = rec['type'] ?? 'unknown';
-        final p = rec['payload'] ?? {};
-        _log.i('Cmd recv: $t → $p');
-
-        // Show snackbar for messages
-        if (t == 'message' || t == 'test') {
-          final msg = p['message'] ?? p['msg'] ?? 'Unknown message';
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.message, color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(msg)),
-                  ],
-                ),
-                backgroundColor: Colors.cyan.shade700,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-      });
-    } catch (e) {
-      _log.e('Supabase init failed: $e');
-      _showStatus('Supabase Failed', Colors.red);
-    }
-  }
 
   void _showStatus(String msg, Color c) {
     if (!mounted) return;
@@ -122,12 +89,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     await prefs.setString('lastGameCode', code);
   }
 
+  Future<void> _initializeFirebaseRTDB(String code) async {
+    try {
+      await FirebaseRTDBService.instance.initialize(code);
+      _log.i('🔥 Firebase RTDB initialized for game: $code');
+    } catch (e) {
+      _log.e('❌ Firebase RTDB initialization failed: $e');
+    }
+  }
+
   @override
   void dispose() {
     _rttTimer?.cancel();
-    _cmdSub?.cancel();
-    SupabaseService.instance.dispose();
     _joinSub?.cancel();
+    FirebaseRTDBService.instance.dispose();
     super.dispose();
   }
 
@@ -147,11 +122,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       };
     }
 
-    // supabase status
-    final supa = SupabaseService.instance;
-    final conn = supa.isConnected;
-    final last = supa.lastRtt;
-    final avg = supa.avgRtt;
+    // Firebase RTDB status for testing
+    final rtdb = FirebaseRTDBService.instance;
+    final conn = rtdb.isConnected;
+    final last = rtdb.lastRtt;
+    final avg = rtdb.avgRtt;
 
     return Scaffold(
       body: Stack(children: [
@@ -173,12 +148,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ),
 
+        // Network status indicator
         if (code != null)
           Positioned(
             top: media.padding.top + 60,
             left: 16,
-            child: _buildSupabaseStatus(conn, last, avg),
+            child: _buildNetworkStatus(conn, last, avg),
           ),
+
+
 
         // settings / controls toggle (unchanged)
         Positioned(
@@ -276,41 +254,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ),
 
-        if (code != null)
-          Positioned(
-            bottom: media.padding.bottom + 16,
-            right: 16,
-            child: Column(children: [
-              if (_joinedPlayerId != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Player ${_joinedPlayerId!.substring(0, 6)} joined',
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
-                  ),
-                ),
-              GestureDetector(
-                onTap: () => ShareService.instance.shareGameInvite(code),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color:
-                        Colors.white.withOpacity(_opponentJoined ? 0.8 : 0.4),
-                    shape: BoxShape.circle,
-                  ),
-                  child:
-                      const Icon(Icons.share, color: Colors.black87, size: 20),
-                ),
-              ),
-            ]),
-          ),
-
+        // Firebase testing FAB buttons
         if (code != null && conn)
           Positioned(
             bottom: media.padding.bottom + 70,
@@ -319,7 +263,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               children: [
                 FloatingActionButton.small(
                   onPressed: () {
-                    SupabaseService.instance
+                    FirebaseRTDBService.instance
                         .sendCommand('test', {'msg': 'Quick test!'});
                   },
                   backgroundColor: Colors.purple,
@@ -328,19 +272,40 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   onPressed: () {
-                    SupabaseService.instance.sendPing();
+                    FirebaseRTDBService.instance.sendPing();
                   },
                   backgroundColor: Colors.cyan,
                   child: const Icon(Icons.network_ping, size: 16),
                 ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: () {
+                    final rtdbStatus = FirebaseRTDBService.instance;
+                    final status = 'Connected: ${rtdbStatus.isConnected}\n'
+                        'Last RTT: ${rtdbStatus.lastRtt ?? "--"}ms\n'
+                        'Avg RTT: ${rtdbStatus.avgRtt.toStringAsFixed(1)}ms';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Firebase Status:\n$status'),
+                        duration: const Duration(seconds: 5),
+                      ),
+                    );
+                  },
+                  backgroundColor: Colors.orange,
+                  child: const Icon(Icons.info, size: 16),
+                ),
               ],
             ),
           ),
+
+
+
+
       ]),
     );
   }
 
-  Widget _buildSupabaseStatus(bool conn, int? last, double avg) {
+  Widget _buildNetworkStatus(bool conn, int? last, double avg) {
     final color = conn ? Colors.green : Colors.red;
     final rttColor = (last ?? 999) < 100 ? Colors.green : Colors.orange;
     return Container(
@@ -353,7 +318,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.cloud, color: color, size: 16),
         const SizedBox(width: 4),
-        Text('Supabase',
+        Text('Network',
             style: TextStyle(
                 color: Colors.cyan, fontSize: 12, fontWeight: FontWeight.bold)),
         const SizedBox(width: 8),

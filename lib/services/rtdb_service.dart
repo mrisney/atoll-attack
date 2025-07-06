@@ -1,5 +1,6 @@
-// lib/services/firebase_rtdb_service.dart
+// lib/services/rtdb_service.dart
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,7 +14,7 @@ class FirebaseRTDBService {
   final List<int> _rttSamples = [];
   late String _gameCode;
   String? _deviceId;
-  final _db = FirebaseDatabase.instance;
+  late final FirebaseDatabase _db;
 
   // Command stream controller
   final StreamController<Map<String, dynamic>> _cmdCtrl =
@@ -57,8 +58,12 @@ class FirebaseRTDBService {
     var deviceId = prefs.getString('device_id');
 
     if (deviceId == null) {
-      deviceId = const Uuid().v4();
+      // Create more unique device ID with timestamp
+      final uuid = const Uuid().v4();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      deviceId = '${uuid.substring(0, 8)}-$timestamp';
       await prefs.setString('device_id', deviceId);
+      _log.i('🆆 Generated new device ID: ${deviceId.substring(0, 12)}...');
     }
 
     _deviceId = deviceId;
@@ -78,11 +83,14 @@ class FirebaseRTDBService {
     _processedCommands.clear();
 
     try {
+      // Use Firebase Database instance (URL from firebase_options.dart)
+      _db = FirebaseDatabase.instance;
+      
       // Set up game reference
       _gameRef = _db.ref('games/$_gameCode');
 
-      // Enable offline persistence
-      await _db.setPersistenceEnabled(true);
+      // Enable offline persistence (this is synchronous, not async)
+      _db.setPersistenceEnabled(true);
       await _gameRef!.keepSynced(true);
 
       // Monitor connection state
@@ -90,23 +98,32 @@ class FirebaseRTDBService {
         (event) {
           final connected = event.snapshot.value as bool? ?? false;
           _log.i(
-              '🔌 RTDB Connection: ${connected ? "Connected" : "Disconnected"}');
+              '🔌 RTDB Connection: ${connected ? "Connected" : "Disconnected"} (initialized: $_initialized)');
 
-          if (connected && !_initialized) {
-            _initialized = true;
-            // Send join command when connected
-            sendCommand('join', {
-              'device_id': _deviceId,
-              'timestamp': DateTime.now().toIso8601String(),
-            });
+          if (connected) {
+            if (!_initialized) {
+              _initialized = true;
+              _log.i('🎉 First connection established - sending join command');
+              // Send join command when connected
+              sendCommand('join', {
+                'device_id': _deviceId,
+                'timestamp': DateTime.now().toIso8601String(),
+              });
+            } else {
+              _log.i('🔄 Reconnected to RTDB');
+            }
+          } else {
+            if (_initialized) {
+              _log.w('⚠️ Lost RTDB connection');
+            }
           }
         },
       );
 
-      // Listen for new commands
+      // Listen for new commands (optimized path)
       _commandSubscription = _gameRef!
-          .child('commands')
-          .orderByChild('timestamp')
+          .child('cmd')
+          .limitToLast(50) // limit to recent commands only
           .onChildAdded
           .listen(
         (event) {
@@ -144,7 +161,7 @@ class FirebaseRTDBService {
       final data = snapshot.value as Map<Object?, Object?>?;
       if (data == null) return;
 
-      // Convert to Map<String, dynamic>
+      // Convert to Map<String, dynamic> (optimized field names)
       final command = <String, dynamic>{};
       data.forEach((key, value) {
         if (key is String) {
@@ -152,9 +169,9 @@ class FirebaseRTDBService {
         }
       });
 
-      final type = command['type'] as String? ?? '';
-      final senderId = command['sender_id'] as String? ?? 'unknown';
-      final payload = command['payload'] as Map<Object?, Object?>? ?? {};
+      final type = command['t'] as String? ?? command['type'] as String? ?? '';
+      final senderId = command['s'] as String? ?? command['sender_id'] as String? ?? 'unknown';
+      final payload = command['p'] as Map<Object?, Object?>? ?? command['payload'] as Map<Object?, Object?>? ?? {};
 
       // Convert payload to proper type
       final typedPayload = <String, dynamic>{};
@@ -164,17 +181,14 @@ class FirebaseRTDBService {
         }
       });
 
-      // Handle ping/pong for latency measurement
-      if (type == 'ping' && senderId != _deviceId) {
-        // Respond to ping
-        final pingTs = typedPayload['ping_ts'] as int? ?? 0;
-        sendCommand('pong', {
-          'ping_ts': pingTs,
-          'pong_ts': DateTime.now().millisecondsSinceEpoch,
-        });
-      } else if (type == 'pong' && senderId != _deviceId) {
+      // Handle ping/pong for latency measurement (optimized)
+      if (type == 'ping' && senderId != _deviceId?.substring(0, 8)) {
+        // Respond to ping with minimal payload
+        final pingTs = typedPayload['pts'] as int? ?? typedPayload['ping_ts'] as int? ?? 0;
+        sendCommand('pong', {'pts': pingTs});
+      } else if (type == 'pong' && senderId != _deviceId?.substring(0, 8)) {
         // Calculate RTT
-        final pingTs = typedPayload['ping_ts'] as int? ?? 0;
+        final pingTs = typedPayload['pts'] as int? ?? typedPayload['ping_ts'] as int? ?? 0;
         final now = DateTime.now().millisecondsSinceEpoch;
         final rtt = now - pingTs;
 
@@ -203,7 +217,7 @@ class FirebaseRTDBService {
     }
   }
 
-  /// Send a command
+  /// Send a command (optimized for low latency)
   Future<void> sendCommand(String type, Map<String, dynamic> payload) async {
     if (!_initialized || _gameRef == null) {
       _log.w('⚠️ Cannot send command - not initialized');
@@ -211,24 +225,25 @@ class FirebaseRTDBService {
     }
 
     final deviceId = await _getDeviceId();
+    final now = DateTime.now().millisecondsSinceEpoch;
 
     try {
+      // Minimize payload size for faster transmission
       final command = {
-        'type': type,
-        'payload': payload,
-        'sender_id': deviceId,
-        'timestamp': ServerValue.timestamp,
+        't': type, // shortened field names
+        'p': payload,
+        's': deviceId.substring(0, 8), // shorter sender ID
+        'ts': now,
       };
 
       // Add timestamp to payload for ping
       if (type == 'ping') {
-        command['payload'] = {
-          ...payload,
-          'ping_ts': DateTime.now().millisecondsSinceEpoch,
-        };
+        command['p'] = {'pts': now}; // minimal ping payload
       }
 
-      await _gameRef!.child('commands').push().set(command);
+      // Use direct path write instead of push() for speed
+      final commandRef = _gameRef!.child('cmd').child(now.toString());
+      await commandRef.set(command);
 
       _log.i('📤 Sent command: $type');
     } catch (e) {

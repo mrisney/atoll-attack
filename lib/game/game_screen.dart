@@ -1,12 +1,14 @@
 // lib/screens/game_screen.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
+
 import '../models/game_doc.dart';
 import '../services/share_service.dart';
-import '../services/supabase_service.dart';
+import '../services/rtdb_service.dart';
 import '../providers/game_provider.dart';
 import '../widgets/island_settings_panel.dart';
 import '../widgets/game_controls_panel.dart';
@@ -14,7 +16,7 @@ import '../widgets/game_hud.dart';
 import '../widgets/draggable_selected_units_panel.dart';
 import 'package:flame/game.dart';
 
-final logger = Logger();
+final _log = Logger();
 
 class GameScreen extends ConsumerStatefulWidget {
   final String? gameCode;
@@ -27,16 +29,15 @@ class GameScreen extends ConsumerStatefulWidget {
 class _GameScreenState extends ConsumerState<GameScreen> {
   StreamSubscription<GameDoc>? _joinSub;
   StreamSubscription<Map<String, dynamic>>? _cmdSub;
-  bool showPanel = false,
-      showHUD = true,
-      showSelectedUnitsPanel = true,
-      isSettingsMode = true;
+  Timer? _rttTimer;
+
+  bool showPanel = false;
+  bool showHUD = true;
+  bool showSelectedUnitsPanel = true;
+  bool isSettingsMode = true;
+
   bool _opponentJoined = false;
   String? _joinedPlayerId;
-  int _latency = 0;
-  Timer? _latencyTimer;
-  bool _isConnected = false;
-  static const Color goldColor = Color(0xFFFFD700);
 
   @override
   void initState() {
@@ -44,58 +45,76 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final code = widget.gameCode;
     if (code != null) {
       _persistGameCode(code);
-      _initializeSupabase(code);
-      // keep existing share listener
+      _initializeFirebaseRTDB(code);
+
+      // still use Firestore for invite-join notifications
       ShareService.instance.listenForJoin(code, (GameDoc doc) {
         setState(() {
           _opponentJoined = true;
           _joinedPlayerId = doc.players.isNotEmpty ? doc.players.last : null;
         });
         Future.delayed(const Duration(seconds: 3), () {
-          if (mounted)
-            setState(() {
-              _opponentJoined = false;
-              _joinedPlayerId = null;
-            });
+          if (!mounted) return;
+          setState(() {
+            _opponentJoined = false;
+            _joinedPlayerId = null;
+          });
         });
       }).then((sub) => _joinSub = sub);
     }
-    // update latency display once/sec
-    _latencyTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted)
-        setState(
-            () => _latency = SupabaseService.instance.averageLatency.round());
+
+    // refresh RTT display every second
+    _rttTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
     });
   }
 
-  Future<void> _initializeSupabase(String code) async {
+  Future<void> _initializeFirebaseRTDB(String code) async {
     try {
-      await SupabaseService.instance.initialize(code);
-      setState(() => _isConnected = true);
-      logger.i('Supabase connected to game $code');
-      // show snackbar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Realtime connected'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      // listen for incoming commands
-      _cmdSub = SupabaseService.instance.commandStream.listen((cmd) {
-        logger.i('Command received: ${cmd['type']}');
-        // handle your game commands...
+      final rtdb = FirebaseRTDBService.instance;
+      await rtdb.initialize(code);
+
+      _showStatus('Firebase RTDB Connected!', Colors.green);
+
+      _cmdSub = rtdb.commandStream.listen((rec) {
+        final t = rec['type'] ?? 'unknown';
+        final p = rec['payload'] ?? {};
+        _log.i('Cmd recv: $t → $p');
+
+        // Show snackbar for messages
+        if (t == 'message' || t == 'test') {
+          final msg = p['message'] ?? p['msg'] ?? 'Unknown message';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.message, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(msg)),
+                  ],
+                ),
+                backgroundColor: Colors.cyan.shade700,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
       });
     } catch (e) {
-      logger.e('Init error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to connect: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      _log.e('Firebase RTDB init failed: $e');
+      _showStatus('Firebase RTDB Failed', Colors.red);
     }
+  }
+
+  void _showStatus(String msg, Color c) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(msg),
+          backgroundColor: c,
+          duration: const Duration(seconds: 2)),
+    );
   }
 
   Future<void> _persistGameCode(String code) async {
@@ -105,112 +124,280 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   @override
   void dispose() {
-    _latencyTimer?.cancel();
+    _rttTimer?.cancel();
     _cmdSub?.cancel();
-    SupabaseService.instance.dispose();
+    FirebaseRTDBService.instance.dispose();
     _joinSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final gameNotifier = ref.watch(gameProvider.notifier);
+    final code = widget.gameCode;
     final game = ref.watch(gameProvider);
-    final stats = ref.watch(gameStatsProvider);
+    final gameStats = ref.watch(gameStatsProvider);
     final media = MediaQuery.of(context);
 
-    // ensure onUnitCountsChanged is set...
+    // unit-counts callback
     if (game.onUnitCountsChanged == null) {
       game.onUnitCountsChanged = () {
-        gameNotifier.notifyUnitCountsChanged();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) setState(() {});
-        });
+        ref.read(gameProvider.notifier).notifyUnitCountsChanged();
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => mounted ? setState(() {}) : null);
       };
     }
+
+    // firebase rtdb status
+    final rtdb = FirebaseRTDBService.instance;
+    final conn = rtdb.isConnected;
+    final last = rtdb.lastRtt;
+    final avg = rtdb.avgRtt;
 
     return Scaffold(
       body: Stack(children: [
         GameWidget(game: game),
+
         if (showHUD)
           Positioned(
             top: media.padding.top + 8,
             left: 16,
             child: GameHUD(
-              blueUnits: stats['blueUnits'] ?? 0,
-              redUnits: stats['redUnits'] ?? 0,
-              blueHealthPercent: stats['blueHealth'] ?? 0.0,
-              redHealthPercent: stats['redHealth'] ?? 0.0,
+              blueUnits: gameStats['blueUnits'] ?? 0,
+              redUnits: gameStats['redUnits'] ?? 0,
+              blueHealthPercent: gameStats['blueHealth'] ?? 0.0,
+              redHealthPercent: gameStats['redHealth'] ?? 0.0,
               isVisible: showHUD,
               onToggleVisibility: () => setState(() => showHUD = !showHUD),
-              blueUnitsRemaining: stats['blueRemaining'] ?? 0,
-              redUnitsRemaining: stats['redRemaining'] ?? 0,
+              blueUnitsRemaining: gameStats['blueRemaining'] ?? 0,
+              redUnitsRemaining: gameStats['redRemaining'] ?? 0,
             ),
           ),
-        if (!showHUD)
-          Positioned(
-            top: media.padding.top + 8,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => setState(() => showHUD = true),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.info_outline,
-                    color: Colors.white, size: 20),
-              ),
-            ),
-          ),
-        if (widget.gameCode != null)
+
+        if (code != null)
           Positioned(
             top: media.padding.top + 60,
             left: 16,
-            child: _buildStatus(),
+            child: _buildFirebaseStatus(conn, last, avg),
           ),
-        // settings toggle & panel, selected units, victory, share icon, ping button...
-        // identical to before, except:
-        // Ping button calls SupabaseService.instance.sendPing()
-        // Test commands call SupabaseService.instance.sendCommand(...)
-        // Remove all WebRTCService.instance calls and replace with SupabaseService.instance
+
+        // settings / controls toggle (unchanged)
+        Positioned(
+          top: media.padding.top + 8,
+          right: 16,
+          child: GestureDetector(
+            onTap: () => setState(() => showPanel = !showPanel),
+            onLongPress: () => setState(() {
+              showPanel = true;
+              isSettingsMode = !isSettingsMode;
+            }),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: showPanel
+                    ? (isSettingsMode ? Colors.blueGrey : Colors.orange)
+                    : Colors.grey.shade800,
+                borderRadius: BorderRadius.circular(20),
+                border:
+                    Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+              ),
+              child: Icon(
+                isSettingsMode ? Icons.tune : Icons.sports_esports,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+
+        if (showPanel)
+          Positioned(
+            bottom: media.padding.bottom + 12,
+            left: 12,
+            right: 12,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  _tab('Settings', Icons.tune, true),
+                  _tab('Controls', Icons.sports_esports, false),
+                ]),
+              ),
+              Container(
+                constraints: BoxConstraints(maxHeight: media.size.height * 0.4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: Colors.white.withOpacity(0.2), width: 1),
+                ),
+                child: isSettingsMode
+                    ? IslandSettingsPanel(
+                        onClose: () => setState(() => showPanel = false))
+                    : GameControlsPanel(
+                        onClose: () => setState(() => showPanel = false)),
+              ),
+            ]),
+          ),
+
+        if (game.selectedUnits.isNotEmpty && showSelectedUnitsPanel)
+          DraggableSelectedUnitsPanel(
+            unitsInfo: game.getSelectedUnitsInfo(),
+            onClose: () {
+              game.clearSelection();
+              setState(() {});
+            },
+          ),
+
+        if (gameStats['isVictoryAchieved'] == true)
+          Positioned(
+            top: media.size.height * 0.3,
+            left: 50,
+            right: 50,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.yellow.shade700, width: 2),
+              ),
+              child: const Text(
+                '🎉 VICTORY! 🎉',
+                style: TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+
+        if (code != null)
+          Positioned(
+            bottom: media.padding.bottom + 16,
+            right: 16,
+            child: Column(children: [
+              if (_joinedPlayerId != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Player ${_joinedPlayerId!.substring(0, 6)} joined',
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ),
+              GestureDetector(
+                onTap: () => ShareService.instance.shareGameInvite(code),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color:
+                        Colors.white.withOpacity(_opponentJoined ? 0.8 : 0.4),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.share, color: Colors.black87, size: 20),
+                ),
+              ),
+            ]),
+          ),
+
+        if (code != null && conn)
+          Positioned(
+            bottom: media.padding.bottom + 70,
+            right: 16,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  onPressed: () {
+                    FirebaseRTDBService.instance
+                        .sendCommand('test', {'msg': 'Quick test!'});
+                  },
+                  backgroundColor: Colors.purple,
+                  child: const Icon(Icons.send, size: 16),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: () {
+                    FirebaseRTDBService.instance.sendPing();
+                  },
+                  backgroundColor: Colors.cyan,
+                  child: const Icon(Icons.network_ping, size: 16),
+                ),
+              ],
+            ),
+          ),
       ]),
     );
   }
 
-  Widget _buildStatus() {
-    final connColor = _isConnected ? Colors.green : Colors.red;
-    final latColor = _latency < 50
-        ? Colors.green
-        : (_latency < 100 ? Colors.orange : Colors.red);
+  Widget _buildFirebaseStatus(bool conn, int? last, double avg) {
+    final color = conn ? Colors.green : Colors.red;
+    final rttColor = (last ?? 999) < 100 ? Colors.green : Colors.orange;
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white24)),
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(_isConnected ? Icons.cloud : Icons.cloud_off,
-            color: connColor, size: 16),
+        Icon(Icons.cloud, color: color, size: 16),
         const SizedBox(width: 4),
-        Text('Realtime',
+        Text('Firebase RTDB',
             style: TextStyle(
-                color: Colors.cyan, fontSize: 12, fontWeight: FontWeight.bold)),
+                color: Colors.orange,
+                fontSize: 12,
+                fontWeight: FontWeight.bold)),
         const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-              color: latColor.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: latColor)),
-          child: Text(_latency > 0 ? '${_latency}ms' : '--',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold)),
-        )
+            color: rttColor.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: rttColor, width: 1),
+          ),
+          child: Text(
+            last != null ? '${last}ms' : '--',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ),
       ]),
     );
   }
+
+  GestureDetector _tab(String label, IconData icon, bool settings) =>
+      GestureDetector(
+        onTap: () => setState(() => isSettingsMode = settings),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSettingsMode == settings
+                ? Colors.white.withOpacity(0.2)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 16, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: isSettingsMode == settings
+                        ? FontWeight.bold
+                        : FontWeight.normal)),
+          ]),
+        ),
+      );
 }

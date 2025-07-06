@@ -1,6 +1,7 @@
 // lib/commands/command_system.dart
 import 'package:flame/components.dart';
 import '../models/unit_model.dart';
+import '../game/island_game.dart';
 
 abstract class GameCommand {
   final String playerId;

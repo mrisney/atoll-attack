@@ -6,18 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Firebase
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'firebase_options.dart'; // ← your generated options
-
-// Supabase
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
 import 'package:logger/logger.dart';
 
-import 'constants/game_config.dart';
 import 'screens/game_screen.dart';
+import 'constants/game_config.dart';
+import 'firebase_options.dart';
 
 final logger = Logger();
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -25,22 +22,23 @@ final navigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1) Initialize Firebase
+  // Initialize Firebase with optimizations
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  await FirebaseAuth.instance.signInAnonymously();
+  
+  // Optimize Firebase RTDB for low latency
+  final db = FirebaseDatabase.instance;
+  db.setPersistenceEnabled(true);
+  db.setPersistenceCacheSizeBytes(5000000); // 5MB cache
+  
+  logger.i("🔥 Firebase initialized successfully with optimizations");
 
-  // 2) Initialize Supabase
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
-    realtimeClientOptions: const RealtimeClientOptions(eventsPerSecond: 40),
-  );
-
-  // 3) Load last game code
+  // 3) Force same game code for all devices
   final prefs = await SharedPreferences.getInstance();
-  final lastCode = prefs.getString('lastGameCode');
+  const lastCode = 'TEST-ROOM';
+  await prefs.setString('lastGameCode', lastCode);
+  logger.i('🎮 Using game code: $lastCode');
 
   runApp(
     ProviderScope(

@@ -58,21 +58,41 @@ class SupabaseService {
     // Ensure we have a device ID
     await _getDeviceId();
     _log.i('🔧 Initializing with device ID: ${_deviceId?.substring(0, 8)}...');
+    _log.i('🎮 Game code: $gameCode');
 
     // Clear processed IDs when reinitializing
     _processedIds.clear();
+    
+    // Reset connection state
+    _initialized = false;
 
     try {
       // First, test if we can read from the table
-      final testQuery = await client
-          .from('game_commands')
-          .select()
-          .eq('game_code', _gameCode)
-          .limit(1);
+      try {
+        final testQuery = await client
+            .from('game_commands')
+            .select('id')
+            .eq('game_code', _gameCode)
+            .limit(1);
+        _log.i('✅ Table access confirmed (${testQuery.length} records), setting up realtime subscription...');
+      } catch (tableError) {
+        _log.e('❌ Table access failed: $tableError');
+        _log.w('⚠️ This might indicate:');
+        _log.w('  - Missing game_commands table');
+        _log.w('  - Incorrect RLS (Row Level Security) policies');
+        _log.w('  - Invalid authentication');
+        throw Exception('Table access denied: $tableError');
+      }
+      
+      // Test basic connectivity
+      try {
+        final healthCheck = await client.from('game_commands').select('id').limit(1);
+        _log.i('📊 Basic connectivity test passed');
+      } catch (connectError) {
+        _log.w('⚠️ Basic connectivity test failed: $connectError');
+      }
 
-      _log.i('✅ Table access confirmed, setting up realtime subscription...');
-
-      // Use the stream API similar to the chat example
+      // Use the stream API with additional configuration
       _subscription = client
           .from('game_commands')
           .stream(primaryKey: ['id'])
@@ -135,7 +155,16 @@ class SupabaseService {
               _log.e('❌ Realtime subscription failed: $error');
               _initialized = false;
 
-              // Try to reconnect after a delay
+              // Check if it's a specific connection error that we can handle
+              final errorStr = error.toString();
+              if (errorStr.contains('RealtimeSubscribeException') || 
+                  errorStr.contains('code: 1002')) {
+                _log.w('⚠️ Connection protocol error detected, attempting fallback...');
+                // Don't auto-reconnect for protocol errors to avoid spam
+                return;
+              }
+
+              // Try to reconnect after a delay for other errors
               Future.delayed(const Duration(seconds: 5), () {
                 if (!_initialized && _gameCode == gameCode) {
                   _log.i('🔄 Attempting to reconnect...');
@@ -178,7 +207,31 @@ class SupabaseService {
     await sendCommand('ping', {});
   }
 
+  /// Manually retry connection (useful for debugging)
+  Future<void> retryConnection() async {
+    _log.i('🔄 Manual connection retry requested...');
+    await dispose();
+    _cmdCtrl = StreamController.broadcast();
+    await initialize(_gameCode);
+  }
+  
+  /// Check if the service is properly configured
+  bool get isConfigured => _gameCode.isNotEmpty && _deviceId != null;
+  
+  /// Get current connection info for debugging
+  Map<String, dynamic> getConnectionInfo() {
+    return {
+      'gameCode': _gameCode,
+      'deviceId': _deviceId?.substring(0, 8),
+      'initialized': _initialized,
+      'hasSubscription': _subscription != null,
+      'rttSamples': _rttSamples.length,
+      'processedIds': _processedIds.length,
+    };
+  }
+
   Future<void> dispose() async {
+    _log.i('🔌 Disposing connection...');
     await _subscription?.cancel();
     await _cmdCtrl.close();
     _initialized = false;
