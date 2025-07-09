@@ -99,25 +99,66 @@ Atoll Attack is a mobile-first RTS game featuring:
 - **Analytics**: Firebase Analytics
 - **Crash Reporting**: Firebase Crashlytics
 
-## 🚀 Next Steps (Future Enhancements)
+## 🚀 Development Roadmap
 
-### Phase 4: Combat & Victory System
-- Unit vs unit combat mechanics
-- Flag capture victory conditions
+### ✅ Completed Phases
+
+#### Phase 1: Deep Link Infrastructure ✅
+- Asset links & universal links configured
+- Cloud Function redirect endpoint at `/i/{code}`
+- App Links handling in Flutter via `app_links` package
+
+#### Phase 2: Game Session Management ✅
+- Create game rooms with unique codes
+- Implement host/guest states with team assignment
+- Add automatic reconnection functionality
+- Room-based multiplayer with WebRTC signaling
+
+#### Phase 3: Real-time Synchronization ✅
+- Hybrid WebRTC + Firebase RTDB command system
+- Client-side prediction with server reconciliation
+- Command deduplication and ownership validation
+- Cross-device coordinate synchronization
+
+### 🚧 Current Development Phases
+
+#### Phase 4: Naval Battle System 🚢
+**Beta Player Requested Feature**
+- **Ship-to-Ship Combat**: Cannons and broadside attacks
+- **Naval Engagement Zones**: Open water combat areas
+- **Ship Health & Damage**: Durability and destruction mechanics
+- **Archer Support**: Units on ships can engage enemy vessels
+- **Strategic Positioning**: Angle ships for optimal cannon fire
+- **Landing vs Combat**: Choose between naval battle or quick landing
+
+#### Phase 5: Enhanced Combat & Victory System ⚔️
+- Advanced unit vs unit combat mechanics
+- Flag capture victory conditions with naval support
 - Elimination-based win conditions
-- Combat animations and effects
+- Combat animations and naval battle effects
+- Ship repair and maintenance systems
 
-### Phase 5: Game Polish & Balance
+#### Phase 6: AI Player System 🤖
+- **Single-player vs AI**: Computer opponent for practice
+- **Multiple Difficulty Levels**: Easy, Medium, Hard AI
+- **Naval AI Tactics**: AI ship positioning and combat
+- **Strategic Decision Making**: AI resource management
+- **Adaptive Behavior**: AI responds to player strategies
+
+#### Phase 7: Game Polish & Balance ✨
 - Unit costs and deployment cooldowns
-- Sound effects and music
+- Naval combat balancing and ship upgrades
+- Sound effects and music (including naval battle audio)
 - Particle effects and animations
-- Tutorial system
+- Tutorial system covering naval and land combat
 - Performance optimization
 
-### Phase 6: Social Features
-- Victory sharing and replays
-- Player statistics
-- Leaderboards
+#### Phase 8: Social Features 🏆
+- Victory sharing and replays (including naval battles)
+- Player statistics and naval combat records
+- Leaderboards for different game modes
+- Achievement system
+- Spectator mode for ongoing battles
 - Achievement system
 
 ## 🔧 Development Setup
