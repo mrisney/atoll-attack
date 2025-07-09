@@ -27,7 +27,7 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
-  StreamSubscription<GameDoc>? _joinSub;
+  StreamSubscription<Map<String, dynamic>>? _joinSub;
   StreamSubscription<Map<String, dynamic>>? _cmdSub;
   Timer? _rttTimer;
 
@@ -47,11 +47,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _persistGameCode(code);
       _initializeFirebaseRTDB(code);
 
-      // still use Firestore for invite-join notifications
-      ShareService.instance.listenForJoin(code, (GameDoc doc) {
+      // Use WebRTC service for multiplayer communication
+      ShareService.instance.listenForPlayerJoin(code, (roomData) {
         setState(() {
           _opponentJoined = true;
-          _joinedPlayerId = doc.players.isNotEmpty ? doc.players.last : null;
+          final players = List<String>.from(roomData['players'] ?? []);
+          _joinedPlayerId = players.length > 1 ? players.last : null;
         });
         Future.delayed(const Duration(seconds: 3), () {
           if (!mounted) return;

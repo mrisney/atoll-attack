@@ -13,6 +13,8 @@ import '../models/unit_model.dart';
 import '../models/player_model.dart';
 import '../rules/game_rules.dart';
 import '../services/pathfinding_service.dart';
+import '../services/game_command_manager.dart';
+import '../services/webrtc_game_service.dart';
 import '../managers/unit_selection_manager.dart';
 import '../constants/game_config.dart';
 import 'dart:ui';
@@ -57,6 +59,12 @@ class IslandGame extends FlameGame
   bool useAssets = false;
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
+  ShipComponent? _activeSpawnShip; // Currently selected ship for spawn controls
+  
+  // Long-tap detection
+  DateTime? _tapStartTime;
+  Vector2? _tapStartPosition;
+  ShipComponent? _potentialLongTapShip;
   static const double _rulesUpdateInterval = kRulesUpdateInterval;
 
   // UI interaction
@@ -71,6 +79,10 @@ class IslandGame extends FlameGame
 
   // Unit selection manager
   late UnitSelectionManager _unitSelectionManager;
+
+  // Game command manager for multiplayer synchronization
+  GameCommandManager? _commandManager;
+  String? _localPlayerId;
 
   // Paint objects
   final Paint _selectionPaint = Paint()
@@ -96,6 +108,40 @@ class IslandGame extends FlameGame
   }) {
     _unitSelectionManager = UnitSelectionManager(this);
   }
+
+  /// Initialize multiplayer command system
+  void initializeMultiplayer(String localPlayerId) {
+    _localPlayerId = localPlayerId;
+    _commandManager = GameCommandManager(
+      game: this,
+      localPlayerId: localPlayerId,
+    );
+  }
+
+  /// Initialize multiplayer with room code for RTDB
+  Future<void> initializeMultiplayerWithRoom(String localPlayerId, String roomCode) async {
+    _localPlayerId = localPlayerId;
+    _commandManager = GameCommandManager(
+      game: this,
+      localPlayerId: localPlayerId,
+    );
+    
+    // Initialize the command manager with room code
+    await _commandManager!.initialize(roomCode);
+    print('🎮 DEBUG: Multiplayer initialized with room: $roomCode');
+  }
+
+  /// Update multiplayer room code for Firebase fallback
+  void updateMultiplayerRoom(String? roomCode) {
+    // This method is now handled by initializeMultiplayerWithRoom
+    print('🔄 DEBUG: updateMultiplayerRoom called with: $roomCode');
+  }
+
+  /// Check if multiplayer is enabled
+  bool get isMultiplayerEnabled => _commandManager != null;
+
+  /// Get command manager (for internal use by managers)
+  GameCommandManager? get commandManager => _commandManager;
 
   void clampCamera() {
     final viewWidth = size.x / zoomLevel;
@@ -248,8 +294,11 @@ class IslandGame extends FlameGame
   }
 
   void _spawnShip(Team team, Vector2 position) {
+    // Use deterministic ship IDs for multiplayer synchronization
+    // Count existing ships of this team to ensure unique but predictable IDs
+    final teamShipCount = _ships.where((ship) => ship.model.team == team).length;
     final shipModel = ShipModel(
-      id: 'ship_${team.name}_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'ship_${team.name}_${teamShipCount + 1}', // e.g., ship_blue_1, ship_red_1
       team: team,
       position: position,
       isOnLandCallback: isOnLand,
@@ -365,10 +414,31 @@ class IslandGame extends FlameGame
     return (worldPos - cameraOrigin) * zoomLevel;
   }
 
+  /// Convert world coordinates to island-relative coordinates
+  /// This ensures consistent coordinates across different devices
+  Vector2 worldToIslandRelative(Vector2 worldPos) {
+    final islandCenter = _island.position;
+    return worldPos - islandCenter;
+  }
+
+  /// Convert island-relative coordinates to world coordinates
+  Vector2 islandRelativeToWorld(Vector2 relativePos) {
+    final islandCenter = _island.position;
+    return relativePos + islandCenter;
+  }
+
   @override
   bool onTapDown(TapDownInfo info) {
     final screenPos = info.eventPosition.global;
     final worldBeforeZoom = screenToWorldPosition(screenPos);
+
+    // Start long-tap detection
+    _tapStartTime = DateTime.now();
+    _tapStartPosition = worldBeforeZoom.clone();
+    
+    // Check if tapping on a ship for potential long-tap
+    final tappedShip = _findShipAtPosition(worldBeforeZoom);
+    _potentialLongTapShip = tappedShip;
 
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 300) {
@@ -382,24 +452,58 @@ class IslandGame extends FlameGame
     }
     _lastTapTime = now;
 
-    final tappedShip = _findShipAtPosition(worldBeforeZoom);
+    return true; // Continue processing in onTapUp
+  }
+
+  @override
+  bool onTapUp(TapUpInfo info) {
+    final screenPos = info.eventPosition.global;
+    final worldPos = screenToWorldPosition(screenPos);
+    
+    // Check for long-tap
+    if (_tapStartTime != null && _tapStartPosition != null) {
+      final tapDuration = DateTime.now().difference(_tapStartTime!);
+      final tapDistance = worldPos.distanceTo(_tapStartPosition!);
+      
+      // Long-tap detected (>500ms and <50 pixels movement)
+      if (tapDuration.inMilliseconds > 500 && tapDistance < 50) {
+        if (_potentialLongTapShip != null) {
+          _potentialLongTapShip!.onLongTap();
+          _resetTapDetection();
+          return true;
+        }
+      }
+    }
+    
+    // Regular tap handling
+    final tappedShip = _findShipAtPosition(worldPos);
     if (tappedShip != null) {
       _unitSelectionManager.handleShipTap(tappedShip);
       _notifyUIUpdate();
+      _resetTapDetection();
       return true;
     }
 
-    final tappedUnit = _findUnitAtPosition(worldBeforeZoom);
+    final tappedUnit = _findUnitAtPosition(worldPos);
     if (tappedUnit != null) {
       _unitSelectionManager.handleUnitTap(tappedUnit);
       _notifyUIUpdate();
+      _resetTapDetection();
       return true;
     }
 
-    _unitSelectionManager.handleEmptyTap(worldBeforeZoom);
+    _unitSelectionManager.handleEmptyTap(worldPos);
     _notifyUIUpdate();
+    _resetTapDetection();
 
     return true;
+  }
+  
+  /// Reset tap detection variables
+  void _resetTapDetection() {
+    _tapStartTime = null;
+    _tapStartPosition = null;
+    _potentialLongTapShip = null;
   }
 
   @override
@@ -489,8 +593,26 @@ class IslandGame extends FlameGame
     final playerId = team == Team.blue ? 'blue' : 'red';
     final player = players[playerId]!;
 
+    // Generate deterministic unit ID for multiplayer synchronization
+    String unitId;
+    if (isMultiplayerEnabled) {
+      // In multiplayer, use deterministic IDs based on team and unit count
+      final teamUnitCount = _units.where((u) => u.model.team == team).length;
+      unitId = 'unit_${playerId}_${unitType.name}_${teamUnitCount + 1}';
+      print('🆕 DEBUG: Spawning unit in MULTIPLAYER mode');
+      print('🆕 DEBUG: Team: $playerId, Type: ${unitType.name}, Count: ${teamUnitCount + 1}');
+      print('🆕 DEBUG: Generated ID: $unitId');
+    } else {
+      // In single player, use timestamp-based IDs
+      unitId = 'unit_${DateTime.now().millisecondsSinceEpoch}_${playerId}_${unitType.name}';
+      print('🆕 DEBUG: Spawning unit in SINGLE-PLAYER mode');
+      print('🆕 DEBUG: Generated ID: $unitId');
+    }
+
+    print('🆕 DEBUG: Spawning unit at position: (${position.x}, ${position.y})');
+
     final unitModel = UnitModel(
-      id: 'unit_${DateTime.now().millisecondsSinceEpoch}_${playerId}_${unitType.name}',
+      id: unitId,
       type: unitType,
       position: position,
       playerId: playerId,
@@ -968,6 +1090,7 @@ class IslandGame extends FlameGame
 
   List<UnitComponent> get selectedUnits => _unitSelectionManager.selectedUnits;
   List<ShipComponent> get selectedShips => _unitSelectionManager.selectedShips;
+  UnitSelectionManager get unitSelectionManager => _unitSelectionManager;
   UnitComponent? get selectedUnit =>
       _unitSelectionManager.selectedUnits.isNotEmpty
           ? _unitSelectionManager.selectedUnits.first
@@ -1024,6 +1147,61 @@ class IslandGame extends FlameGame
     return _unitSelectionManager.getSelectedObjectsInfo();
   }
 
+  /// Show contextual spawn controls for a specific ship
+  void showShipSpawnControls(ShipComponent ship) {
+    // Hide any existing spawn controls first
+    hideShipSpawnControls();
+    
+    // Only show controls for ships that can deploy units
+    if (!ship.model.canDeployUnits()) {
+      print('🚢 DEBUG: Ship cannot deploy units - ${ship.model.getStatusText()}');
+      return;
+    }
+    
+    // Check if this ship belongs to the local player in multiplayer
+    if (isMultiplayerEnabled) {
+      final commandManager = _commandManager;
+      if (commandManager != null) {
+        final shipTeam = ship.model.team == Team.blue ? 'blue' : 'red';
+        final localTeam = commandManager.localPlayerId == 'blue' || commandManager.localPlayerId == 'red' 
+            ? commandManager.localPlayerId 
+            : (WebRTCGameService.instance.isHost ? 'blue' : 'red');
+            
+        if (shipTeam != localTeam) {
+          print('🚢 DEBUG: Cannot control opponent ship (${ship.model.team.name})');
+          return;
+        }
+      }
+    }
+    
+    // Store reference to the ship for spawn controls
+    _activeSpawnShip = ship;
+    
+    // Notify UI to show spawn controls
+    _notifyUIUpdate();
+    
+    print('🚢 DEBUG: Showing spawn controls for ${ship.model.team.name} ship');
+    print('🚢 DEBUG: Available units: ${ship.model.getAvailableUnits()}');
+  }
+  
+  /// Hide ship spawn controls
+  void hideShipSpawnControls() {
+    if (_activeSpawnShip != null) {
+      _activeSpawnShip = null;
+      _notifyUIUpdate();
+      print('🚢 DEBUG: Hiding spawn controls');
+    }
+  }
+  
+  /// Get the currently active spawn ship
+  ShipComponent? get activeSpawnShip => _activeSpawnShip;
+  @override
+  void onRemove() {
+    _commandManager?.dispose();
+    super.onRemove();
+  }
+
+  /// Get selected ship cargo information
   Map<String, dynamic>? getSelectedShipCargo() {
     final selectedShips = _unitSelectionManager.selectedShips;
     if (selectedShips.isEmpty) return null;
@@ -1070,16 +1248,24 @@ class IslandGame extends FlameGame
           u.playerId == playerId && u.type == UnitType.captain && u.health > 0);
 
       if (!hasCaptain) {
-        spawnSingleUnit(UnitType.captain, team);
+        _spawnSingleUnit(UnitType.captain, team);
       } else {
         final rng = math.Random();
-        spawnSingleUnit(
+        _spawnSingleUnit(
             rng.nextBool() ? UnitType.archer : UnitType.swordsman, team);
       }
     }
 
     debugPrint(
         "Spawned units for ${player.name}. Units remaining: ${player.unitsRemaining}");
+  }
+
+  /// Spawn a single unit (internal helper method)
+  void _spawnSingleUnit(UnitType unitType, Team team) {
+    // This is a simplified version - you may need to adjust based on your game logic
+    final playerId = team == Team.blue ? 'blue' : 'red';
+    final spawnPosition = Vector2(size.x / 2, size.y / 2); // Default center position
+    spawnUnitAtPosition(unitType, team, spawnPosition);
   }
 
   void forceRefreshUnitCounts() {

@@ -1,12 +1,17 @@
 // lib/screens/game_screen.dart
 
-import 'dart:async';
+import 'dart:async' as async;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
+import 'package:flame/components.dart';
 
 import '../models/game_doc.dart';
+import '../models/unit_model.dart';
+import '../game/ship_component.dart';
+import '../services/webrtc_game_service.dart';
+import '../widgets/ship_spawn_controls.dart';
 // import '../services/share_service.dart'; // TODO: Re-enable for multiplayer
 import '../services/rtdb_service.dart';
 
@@ -28,9 +33,9 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
-  StreamSubscription<GameDoc>? _joinSub;
+  async.StreamSubscription<GameDoc>? _joinSub;
 
-  Timer? _rttTimer;
+  async.Timer? _rttTimer;
 
   bool showPanel = false;
   bool showHUD = true;
@@ -67,7 +72,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     // refresh RTT display every second
-    _rttTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _rttTimer = async.Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
   }
@@ -131,6 +136,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return Scaffold(
       body: Stack(children: [
         GameWidget(game: game),
+
+        // Multiplayer Controls (top-right)
+        Positioned(
+          top: media.padding.top + 8,
+          right: 16,
+          child: _buildMultiplayerControls(),
+        ),
+
+        // Ship Spawn Controls (contextual)
+        if (game.activeSpawnShip != null)
+          Positioned(
+            top: media.padding.top + 100,
+            right: 16,
+            child: ShipSpawnControls(
+              ship: game.activeSpawnShip!,
+              onSpawnUnit: (unitType) => _spawnUnitFromShip(game.activeSpawnShip!, unitType),
+              onClose: () => game.hideShipSpawnControls(),
+            ),
+          ),
 
         if (showHUD)
           Positioned(
@@ -363,4 +387,201 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ]),
         ),
       );
+
+  /// Build multiplayer controls
+  Widget _buildMultiplayerControls() {
+    final webrtcService = WebRTCGameService.instance;
+    final isConnected = webrtcService.isConnected;
+    final roomCode = webrtcService.roomCode;
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (roomCode != null) ...[
+            Text(
+              'Room: $roomCode',
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+            Text(
+              isConnected ? '🟢 Connected' : '🔴 Waiting...',
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _leaveRoom,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                minimumSize: const Size(80, 32),
+              ),
+              child: const Text('Leave', style: TextStyle(fontSize: 12)),
+            ),
+          ] else ...[
+            ElevatedButton(
+              onPressed: _hostGame,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                minimumSize: const Size(80, 32),
+              ),
+              child: const Text('Host', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(height: 4),
+            ElevatedButton(
+              onPressed: _joinGame,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                minimumSize: const Size(80, 32),
+              ),
+              child: const Text('Join', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Host a new game
+  Future<void> _hostGame() async {
+    try {
+      final webrtcService = WebRTCGameService.instance;
+      await webrtcService.initialize();
+      
+      final roomCode = await webrtcService.createRoom();
+      if (roomCode != null) {
+        // Initialize multiplayer with blue team for host
+        final game = ref.read(gameProvider);
+        await game.initializeMultiplayerWithRoom('blue', roomCode);
+        
+        setState(() {});
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('🏠 Hosting room: $roomCode')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Failed to host: $e')),
+      );
+    }
+  }
+
+  /// Join an existing game
+  Future<void> _joinGame() async {
+    final controller = TextEditingController();
+    
+    final roomCode = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Join Game'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Enter room code',
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.characters,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    );
+
+    if (roomCode != null && roomCode.isNotEmpty) {
+      try {
+        final webrtcService = WebRTCGameService.instance;
+        await webrtcService.initialize();
+        
+        final success = await webrtcService.joinRoom(roomCode);
+        if (success) {
+          // Initialize multiplayer with red team for guest
+          final game = ref.read(gameProvider);
+          await game.initializeMultiplayerWithRoom('red', roomCode);
+          
+          setState(() {});
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('🚪 Joined room: $roomCode')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('❌ Failed to join room')),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error joining: $e')),
+        );
+      }
+    }
+  }
+
+  /// Spawn a unit from the specified ship
+  void _spawnUnitFromShip(ShipComponent ship, UnitType unitType) {
+    final game = ref.read(gameProvider);
+    
+    // Check if ship can deploy units
+    if (!ship.model.canDeployUnits()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Ship cannot deploy units: ${ship.model.getStatusText()}')),
+      );
+      return;
+    }
+    
+    // Check if ship has the requested unit type
+    final availableUnits = ship.model.getAvailableUnits();
+    final unitCount = availableUnits[unitType] ?? 0;
+    if (unitCount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ No ${unitType.name} units available')),
+      );
+      return;
+    }
+    
+    print('🆕 DEBUG: Spawning ${unitType.name} from ${ship.model.team.name} ship');
+    
+    // Select the ship first (required by unit selection manager)
+    game.unitSelectionManager.clearSelection();
+    game.unitSelectionManager.handleShipTap(ship);
+    
+    // Deploy the unit using the existing system
+    final success = game.unitSelectionManager.deployUnitFromShip(unitType);
+    
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Deployed ${unitType.name}'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+      
+      // Keep the spawn controls open for multiple deployments
+      // User can close manually or tap elsewhere
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Failed to deploy ${unitType.name}')),
+      );
+    }
+  }
+  Future<void> _leaveRoom() async {
+    final webrtcService = WebRTCGameService.instance;
+    await webrtcService.leaveRoom();
+    setState(() {});
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('👋 Left room')),
+    );
+  }
 }

@@ -915,6 +915,24 @@ class ShipComponent extends PositionComponent with HasGameRef<IslandGame> {
     showShipInfo();
   }
 
+  /// Handle long-tap on ship - show spawn controls
+  void onLongTap() {
+    // Only show spawn controls if ship can deploy units
+    if (!model.canDeployUnits()) {
+      showShipInfo(); // Show why it can't deploy
+      return;
+    }
+
+    // Show contextual spawn panel for this ship
+    gameRef.showShipSpawnControls(this);
+    
+    // Visual feedback for long-tap
+    _selectionPulse = 0.0;
+    model.isSelected = true;
+    
+    print('🚢 DEBUG: Long-tap on ${model.team.name} ship - showing spawn controls');
+  }
+
   /// Set target position for ship movement with visual feedback
   void setTargetPosition(Vector2 target) {
     model.setTargetPosition(target);

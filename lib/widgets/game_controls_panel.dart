@@ -7,8 +7,8 @@ import '../providers/game_provider.dart';
 import '../models/unit_model.dart';
 import '../constants/game_config.dart';
 
-// ← swap out SupabaseService for FirebaseRTDBService
-import '../services/rtdb_service.dart';
+// Use WebRTC service for multiplayer communication
+import '../services/webrtc_game_service.dart';
 
 final _log = Logger();
 
@@ -29,59 +29,16 @@ class GameControlsPanel extends ConsumerStatefulWidget {
 }
 
 class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
-  final List<String> _messageHistory = [];
-  final TextEditingController _messageController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    // Listen for incoming messages
-    FirebaseRTDBService.instance.commandStream.listen((cmd) {
-      if (cmd['type'] == 'message' || cmd['type'] == 'test') {
-        final payload = cmd['payload'] as Map<String, dynamic>? ?? {};
-        final msg = payload['msg'] ?? payload['message'] ?? 'Unknown';
-        setState(() {
-          _messageHistory.add('← $msg');
-          if (_messageHistory.length > 5) _messageHistory.removeAt(0);
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final game = ref.watch(gameProvider);
     final unitCounts = ref.watch(unitCountsProvider);
-
-    // Cache Firebase connection status to avoid expensive calls during builds
-    final rtdb = FirebaseRTDBService.instance;
-    bool connected = false;
-    int? lastRtt;
-    String avgRtt = '0.0';
-    
-    try {
-      connected = rtdb.isConnected;
-      if (connected) {
-        lastRtt = rtdb.lastRtt;
-        avgRtt = rtdb.avgRtt.toStringAsFixed(1);
-      }
-    } catch (e) {
-      // Ignore Firebase connection errors during build
-    }
-
-    // Only log when connected to reduce spam
-    if (connected) {
-      _log.d(
-        '🔄 GameControlsPanel – useMultiplayer=${widget.useMultiplayer} '
-        'Firebase.connected=$connected lastRtt=${lastRtt ?? '-'}ms avg=${avgRtt}ms',
-      );
-    }
 
     final screen = MediaQuery.of(context).size;
     final isLandscape = screen.width > screen.height;
@@ -108,9 +65,91 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
               else
                 _buildPortrait(context, unitCounts, game),
 
-              // divider + test section
+              // divider + WebRTC status section
               const Divider(color: Colors.white24),
-              _buildTestSection(context, connected, lastRtt, avgRtt),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'WebRTC Status',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final webrtcService = WebRTCGameService.instance;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Connection: ${webrtcService.connectionState}',
+                              style: TextStyle(
+                                color: webrtcService.isConnected ? Colors.green : Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (webrtcService.roomCode != null)
+                              Text(
+                                'Room: ${webrtcService.roomCode}',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            if (webrtcService.averageLatency > 0)
+                              Text(
+                                'Latency: ${webrtcService.averageLatency.toStringAsFixed(0)}ms',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            if (webrtcService.roomCode != null) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    try {
+                                      await webrtcService.leaveRoom();
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('🚪 Left room successfully'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('❌ Error leaving room: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade700,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                  ),
+                                  child: const Text(
+                                    '🚪 Leave Room',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -148,183 +187,6 @@ class _GameControlsPanelState extends ConsumerState<GameControlsPanel> {
         const SizedBox(height: 4),
         _buildInstructions(10),
       ],
-    );
-  }
-
-  Widget _buildTestSection(
-      BuildContext c, bool connected, int? last, String avg) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.cloud,
-                color: connected ? Colors.green : Colors.red, size: 14),
-            const SizedBox(width: 8),
-            Text(
-              'Firebase RTDB Test',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
-            IconButton(
-              icon:
-                  const Icon(Icons.network_ping, size: 20, color: Colors.cyan),
-              onPressed:
-                  connected ? FirebaseRTDBService.instance.sendPing : null,
-              tooltip: 'Send Ping',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _stat('Last', last != null ? '$last ms' : '--', Colors.orange),
-            _stat('Avg', '$avg ms', Colors.green),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // Message input and send
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Type message...',
-                  hintStyle: TextStyle(color: Colors.white54, fontSize: 12),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.white24),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.white24),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.cyan),
-                  ),
-                ),
-                onSubmitted: connected ? (_) => _sendMessage() : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.send, size: 20),
-              color: Colors.cyan,
-              onPressed: connected ? _sendMessage : null,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 8),
-
-        // Message history
-        if (_messageHistory.isNotEmpty) ...[
-          Container(
-            height: 60,
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: ListView.builder(
-              itemCount: _messageHistory.length,
-              itemBuilder: (context, index) {
-                final msg = _messageHistory[index];
-                final isSent = msg.startsWith('→');
-                return Text(
-                  msg,
-                  style: TextStyle(
-                    color: isSent ? Colors.cyan : Colors.greenAccent,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _testBtn('Ping', Icons.network_ping,
-                connected ? FirebaseRTDBService.instance.sendPing : null),
-            _testBtn(
-                'Test',
-                Icons.message,
-                connected
-                    ? () => FirebaseRTDBService.instance
-                        .sendCommand('test', {'msg': 'Hello from UI'})
-                    : null),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          connected ? 'Connected' : 'Disconnected',
-          style: TextStyle(
-            color: connected ? Colors.greenAccent : Colors.orangeAccent,
-            fontSize: 10,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _sendMessage() {
-    final msg = _messageController.text.trim();
-    if (msg.isEmpty) return;
-
-    FirebaseRTDBService.instance.sendCommand('message', {'message': msg});
-    setState(() {
-      _messageHistory.add('→ $msg');
-      if (_messageHistory.length > 5) _messageHistory.removeAt(0);
-    });
-    _messageController.clear();
-  }
-
-  Widget _stat(String label, String val, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label,
-            style: const TextStyle(color: Colors.white70, fontSize: 10)),
-        Text(val,
-            style: TextStyle(
-                color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-
-  Widget _testBtn(String label, IconData icon, VoidCallback? onTap) {
-    return ElevatedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16),
-      label: Text(label, style: const TextStyle(fontSize: 12)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor:
-            onTap != null ? Colors.purple.shade700 : Colors.grey.shade600,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      ),
     );
   }
 

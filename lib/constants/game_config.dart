@@ -4,11 +4,6 @@ import 'package:flame/components.dart';
 /// Firebase configuration constants
 const String firebaseRtdbUrl = 'https://atoll-attack-default-rtdb.firebaseio.com';
 
-/// Supabase configuration constants (deprecated)
-const String supabaseUrl = 'https://urebhhsczqwzoyvwmjhi.supabase.co';
-const String supabaseAnonKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyZWJoaHNjenF3em95dndtamhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA2MzQ2MjYsImV4cCI6MjA2NjIxMDYyNn0.dyaS7uNFqUBjhEFKYqjha8ZBvYr2mRDRkkm0qoel85A';
-
 // Default island settings
 const double kDefaultAmplitude = 1.9;
 const double kDefaultWavelength = 0.22;

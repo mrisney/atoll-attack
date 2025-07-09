@@ -13,6 +13,7 @@ import 'package:app_links/app_links.dart';
 import 'package:logger/logger.dart';
 
 import 'screens/game_screen.dart';
+import 'screens/test_menu_screen.dart';
 import 'constants/game_config.dart';
 import 'firebase_options.dart';
 
@@ -99,7 +100,7 @@ class _AtollAttackAppState extends State<AtollAttackApp> {
       title: 'Atoll Attack',
       navigatorKey: navigatorKey,
       theme: ThemeData.dark(),
-      home: GameScreen(gameCode: widget.initialInviteCode),
+      home: const TestMenuScreen(), // Use test menu for easy access
     );
   }
 }

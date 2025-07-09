@@ -283,6 +283,15 @@ class UnitSelectionManager {
   void moveSelectedUnits(Vector2 worldTarget) {
     if (_selectedUnits.isEmpty) return;
 
+    // Send command if in multiplayer mode
+    if (game.isMultiplayerEnabled) {
+      game.commandManager?.sendUnitMoveCommand(
+        units: _selectedUnits,
+        targetPosition: worldTarget,
+        isAttackMove: false,
+      );
+    }
+
     // Create destination marker
     game.createDestinationMarker(worldTarget);
 
@@ -319,6 +328,22 @@ class UnitSelectionManager {
   void moveSelectedShips(Vector2 worldTarget) {
     if (_selectedShips.isEmpty) return;
 
+    print('🚢 DEBUG: Moving ${_selectedShips.length} ships to (${worldTarget.x}, ${worldTarget.y})');
+    print('🚢 DEBUG: Multiplayer enabled: ${game.isMultiplayerEnabled}');
+
+    // Send command if in multiplayer mode
+    if (game.isMultiplayerEnabled) {
+      for (final ship in _selectedShips) {
+        print('🚢 DEBUG: Sending ship move command for ${ship.model.id}');
+        game.commandManager?.sendShipMoveCommand(
+          ship: ship,
+          targetPosition: worldTarget,
+        );
+      }
+    } else {
+      print('🚢 DEBUG: Multiplayer not enabled, command not sent');
+    }
+
     // Create destination marker
     game.createDestinationMarker(worldTarget);
 
@@ -347,6 +372,17 @@ class UnitSelectionManager {
         unit.setTargetPosition(target.position);
       }
       return;
+    }
+
+    // Send attack commands if in multiplayer mode
+    if (game.isMultiplayerEnabled) {
+      for (final unit in attackingUnits) {
+        game.commandManager?.sendUnitAttackCommand(
+          attacker: unit,
+          target: target,
+          isPlayerInitiated: true,
+        );
+      }
     }
 
     // For each attacking unit, set target enemy with player-initiated flag
@@ -598,15 +634,25 @@ class UnitSelectionManager {
     final ship = _selectedShips.first;
     if (!ship.model.canDeployUnits()) return false;
 
-    // Try to deploy the unit
-    final deployedType = ship.deployUnit(unitType);
-    if (deployedType == null) return false;
-
-    // Get deployment position
+    // Get deployment position first
     final deployPos = ship.getDeploymentPosition();
     if (deployPos == null) return false;
 
-    // Create and spawn the unit
+    // Try to deploy the unit from ship's cargo
+    final deployedType = ship.deployUnit(unitType);
+    if (deployedType == null) return false;
+
+    // In multiplayer mode, send command to other players and spawn locally
+    if (game.isMultiplayerEnabled) {
+      // Send command to other players
+      game.commandManager?.sendUnitSpawnCommand(
+        ship: ship,
+        unitType: deployedType, // Use the actual deployed type
+        spawnPosition: deployPos,
+      );
+    }
+
+    // Always spawn the unit locally (both single-player and multiplayer)
     game.spawnUnitAtPosition(deployedType, ship.model.team, deployPos);
 
     return true;
