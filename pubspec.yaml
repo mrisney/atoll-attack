@@ -19,21 +19,25 @@ dependencies:
   riverpod: ^2.6.1
   hooks_riverpod: ^2.6.1
   flutter_riverpod: ^2.6.1
-  firebase_core:    ^3.14.0
-  firebase_auth:    ^5.6.0
-  cloud_firestore:  ^5.6.9
-  cloud_functions:  ^5.5.2
-  firebase_database: ^11.3.7
-  firebase_storage:  ^12.4.7
+  
+  # Core Firebase services (only what we use)
+  firebase_core: ^3.14.0
+  firebase_database: ^11.3.7  # RTDB for multiplayer fallback
+  
+  # Multiplayer & Communication
+  flutter_webrtc: ^0.14.1     # WebRTC for P2P multiplayer
+  
+  # Utilities
   shared_preferences: ^2.5.3
   flutter_screenutil: ^5.9.3
+  app_links: ^6.4.0           # Deep linking
+  share_plus: ^11.0.0         # Share room codes
+  logger: ^2.5.0              # Logging
+  uuid: ^4.5.1                # Unique IDs
+  rxdart: ^0.27.7             # Reactive streams
+  
+  # UI & Icons
   flutter_launcher_icons: ^0.14.4
-  app_links: ^6.4.0
-  share_plus: ^11.0.0
-  logger: ^2.5.0
-  flutter_webrtc: ^0.14.1
-  uuid: ^4.5.1
-  rxdart: ^0.27.7
 
 dev_dependencies:
   flutter_test:

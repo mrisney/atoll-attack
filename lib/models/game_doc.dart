@@ -1,7 +1,5 @@
 // lib/models/game_doc.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// A data model representing a game room stored in Firestore.
 class GameDoc {
   /// The document ID, used as the room code (e.g. "ISL-ABC123").

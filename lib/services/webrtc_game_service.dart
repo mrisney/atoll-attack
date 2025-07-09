@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:logger/logger.dart';
 
 /// WebRTC-based real-time communication service for Atoll Attack multiplayer
