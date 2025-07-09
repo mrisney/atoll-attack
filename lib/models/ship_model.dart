@@ -751,6 +751,24 @@ class ShipModel {
 
   /// Get cargo count
   int get cargoCount => cargo.length;
+  
+  /// Get individual cargo counts for sync
+  int get captainCargo => cargo.where((unit) => unit == UnitType.captain).length;
+  int get swordsmanCargo => cargo.where((unit) => unit == UnitType.swordsman).length;
+  int get archerCargo => cargo.where((unit) => unit == UnitType.archer).length;
+  
+  /// Set cargo count for a specific unit type (for sync)
+  void setCargo(UnitType unitType, int count) {
+    // Remove all units of this type first
+    cargo.removeWhere((unit) => unit == unitType);
+    
+    // Add the specified count
+    for (int i = 0; i < count; i++) {
+      if (cargo.length < maxCargo) {
+        cargo.add(unitType);
+      }
+    }
+  }
 
   /// Check if ship is destroyed
   bool get isDestroyed => health <= 0;

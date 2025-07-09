@@ -442,8 +442,8 @@ class UnitSelectionManager {
         break;
       }
 
-      // Set ship as target for unit
-      unit.model.setTargetShip(targetShip.model.id);
+      // Use manual ship seeking for player commands
+      unit.model.seekSpecificShip(targetShip.model.id);
       orderedCount++;
     }
 

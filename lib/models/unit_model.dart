@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../constants/game_config.dart';
 import '../rules/combat_rules.dart';
+import '../utils/app_logger.dart';
 
 enum UnitType {
   captain,
@@ -67,6 +68,9 @@ class UnitModel {
   bool isBoarded = false;
   double healingRate = 10.0; // Health per second while on ship
   double lowHealthThreshold = 0.5; // 50% health triggers retreat
+  
+  // Callback to find ships for boarding
+  List<dynamic> Function()? getAllShipsCallback;
 
   // Flag raising properties (for captains)
   bool isRaisingFlag = false;
@@ -80,6 +84,8 @@ class UnitModel {
   // Movement tracking
   double _noiseOffset = 0.0;
   double _wanderAngle = 0.0;
+  double _lastPatrolUpdate = 0.0;
+  static const double _patrolUpdateInterval = 5.0; // Update patrol position every 5 seconds
 
   UnitModel({
     required this.id,
@@ -99,6 +105,7 @@ class UnitModel {
     this.path,
     this.isOnLandCallback,
     this.getTerrainSpeedCallback,
+    this.getAllShipsCallback,
   })  : // Set type-specific properties
         attackRange = type == UnitType.archer
             ? 60.0
@@ -151,6 +158,7 @@ class UnitModel {
     List<Vector2>? path,
     bool Function(Vector2)? isOnLandCallback,
     double Function(Vector2)? getTerrainSpeedCallback,
+    List<dynamic> Function()? getAllShipsCallback,
   }) {
     return UnitModel(
       id: id,
@@ -170,6 +178,7 @@ class UnitModel {
       path: path,
       isOnLandCallback: isOnLandCallback,
       getTerrainSpeedCallback: getTerrainSpeedCallback,
+      getAllShipsCallback: getAllShipsCallback,
     );
   }
 
@@ -231,8 +240,208 @@ class UnitModel {
     // Auto-seek ship if health is low and not player-commanded elsewhere
     return health / maxHealth <= lowHealthThreshold &&
         !isInCombat &&
-        !forceRedirect &&
+        targetShipId == null &&
+        !isSeekingShip; // Don't auto-seek if already seeking
+  }
+
+  /// Check if unit should manually seek ship (player-directed)
+  bool shouldManuallySeekShip(String shipId) {
+    return health < maxHealth && // Any health loss
+        !isInCombat &&
         targetShipId == null;
+  }
+
+  /// Find the nearest friendly ship for boarding
+  String? findNearestFriendlyShip() {
+    if (getAllShipsCallback == null) return null;
+    
+    final ships = getAllShipsCallback!();
+    if (ships.isEmpty) return null;
+    
+    String? nearestShipId;
+    double nearestDistance = double.infinity;
+    
+    for (final ship in ships) {
+      // Check if ship is friendly (same team)
+      final shipTeam = ship.model?.team;
+      if (shipTeam != team) continue;
+      
+      // Check if ship can accept boarding
+      if (!ship.model?.canBoardUnit()) continue;
+      
+      // Calculate distance
+      final shipPosition = ship.model?.position;
+      if (shipPosition == null) continue;
+      
+      final distance = position.distanceTo(shipPosition);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestShipId = ship.model?.id;
+      }
+    }
+    
+    return nearestShipId;
+  }
+
+  /// Start seeking the nearest friendly ship for healing
+  void startSeekingShip() {
+    final shipId = findNearestFriendlyShip();
+    if (shipId != null) {
+      setTargetShip(shipId);
+      AppLogger.debug('Unit ${id} seeking ship ${shipId} for healing (health: ${health.toInt()}/${maxHealth.toInt()})');
+    }
+  }
+
+  /// Manually direct unit to specific ship (player command)
+  void seekSpecificShip(String shipId) {
+    if (shouldManuallySeekShip(shipId)) {
+      setTargetShip(shipId);
+      forceRedirect = true; // Override other behaviors
+      AppLogger.debug('Unit ${id} manually directed to ship ${shipId} for healing');
+    }
+  }
+
+  /// Find the target ship object
+  dynamic _findTargetShip() {
+    if (getAllShipsCallback == null || targetShipId == null) return null;
+    
+    final ships = getAllShipsCallback!();
+    for (final ship in ships) {
+      if (ship.model?.id == targetShipId) {
+        return ship.model;
+      }
+    }
+    return null;
+  }
+
+  /// Process healing while on ship
+  void processHealing(double dt) {
+    if (!isBoarded) return;
+    
+    if (health < maxHealth) {
+      health += healingRate * dt;
+      health = math.min(health, maxHealth);
+      
+      // Check if fully healed
+      if (health >= maxHealth) {
+        AppLogger.debug('Unit ${id} fully healed, disembarking ship');
+        _disembarkFromShip();
+      }
+    }
+  }
+
+  /// Disembark from ship when healed
+  void _disembarkFromShip() {
+    if (!isBoarded || targetShipId == null) return;
+    
+    final targetShip = _findTargetShip();
+    if (targetShip != null) {
+      // Get disembark position
+      final disembarkPosition = targetShip.getBoardingPosition();
+      if (disembarkPosition != null) {
+        position = disembarkPosition.clone();
+        targetPosition = disembarkPosition.clone();
+      }
+      
+      // Remove from ship
+      targetShip.disembarkUnit(id);
+    }
+    
+    // Reset boarding state
+    disembarkShip();
+  }
+
+  /// Get a patrol position around the apex to prevent crowding
+  Vector2 _getApexPatrolPosition(Vector2 apexPosition) {
+    // Create a patrol position based on unit ID for consistency
+    final hash = id.hashCode;
+    final angle = (hash % 360) * (math.pi / 180); // Convert to radians
+    final patrolRadius = 50.0 + (hash % 30); // 50-80 radius
+    
+    // Calculate patrol position around apex
+    final patrolX = apexPosition.x + math.cos(angle) * patrolRadius;
+    final patrolY = apexPosition.y + math.sin(angle) * patrolRadius;
+    
+    return Vector2(patrolX, patrolY);
+  }
+
+  /// Calculate appropriate arrival radius based on target and conditions
+  double _calculateArrivalRadius(Vector2 target, Offset? apex) {
+    // Base arrival radius
+    double arrivalRadius = radius * 2;
+    
+    // Larger radius for apex area to prevent crowding
+    if (apex != null) {
+      final apexPosition = Vector2(apex.dx, apex.dy);
+      final distanceToApex = target.distanceTo(apexPosition);
+      
+      if (distanceToApex < 50) {
+        // Target is near apex, use larger arrival radius
+        arrivalRadius = math.max(arrivalRadius, 25.0);
+      }
+    }
+    
+    // Captains need more precise positioning for flag raising
+    if (type == UnitType.captain) {
+      arrivalRadius = math.min(arrivalRadius, 15.0);
+    }
+    
+    return arrivalRadius;
+  }
+
+  /// Calculate alignment force for flocking behavior
+  Vector2 _calculateAlignment(List<UnitModel> units) {
+    final neighborRadius = 50.0;
+    Vector2 averageVelocity = Vector2.zero();
+    int neighborCount = 0;
+
+    for (final other in units) {
+      if (other.id == id || other.team != team) continue;
+      
+      final distance = position.distanceTo(other.position);
+      if (distance < neighborRadius && distance > 0) {
+        averageVelocity += other.velocity;
+        neighborCount++;
+      }
+    }
+
+    if (neighborCount > 0) {
+      averageVelocity /= neighborCount.toDouble();
+      averageVelocity.normalize();
+      averageVelocity.scale(maxSpeed);
+      return (averageVelocity - velocity) * 0.1;
+    }
+
+    return Vector2.zero();
+  }
+
+  /// Calculate cohesion force for flocking behavior
+  Vector2 _calculateCohesion(List<UnitModel> units) {
+    final neighborRadius = 60.0;
+    Vector2 centerOfMass = Vector2.zero();
+    int neighborCount = 0;
+
+    for (final other in units) {
+      if (other.id == id || other.team != team) continue;
+      
+      final distance = position.distanceTo(other.position);
+      if (distance < neighborRadius) {
+        centerOfMass += other.position;
+        neighborCount++;
+      }
+    }
+
+    if (neighborCount > 0) {
+      centerOfMass /= neighborCount.toDouble();
+      Vector2 toCenterOfMass = centerOfMass - position;
+      if (toCenterOfMass.length > 0) {
+        toCenterOfMass.normalize();
+        toCenterOfMass.scale(maxSpeed);
+        return (toCenterOfMass - velocity) * 0.05;
+      }
+    }
+
+    return Vector2.zero();
   }
 
   bool shouldEngageInCombat(List<UnitModel> allUnits) {
@@ -414,6 +623,7 @@ class UnitModel {
     // Skip most updates if boarded on ship
     if (isBoarded) {
       // Only handle healing
+      processHealing(dt);
       return;
     }
 
@@ -437,8 +647,25 @@ class UnitModel {
 
     // Check if should auto-seek ship when health is low
     if (shouldSeekShip() && !isSeekingShip) {
-      // Auto-retreat to ship behavior can be added here
-      // For now, only player-initiated ship seeking
+      startSeekingShip();
+    }
+
+    // Update patrol positions periodically for non-captain units near apex
+    if (type != UnitType.captain && apex != null && !isInCombat && !isSeekingShip) {
+      _lastPatrolUpdate += dt;
+      if (_lastPatrolUpdate >= _patrolUpdateInterval) {
+        _lastPatrolUpdate = 0.0;
+        
+        final apexPosition = Vector2(apex.dx, apex.dy);
+        final distanceToApex = position.distanceTo(apexPosition);
+        
+        // If idle near apex, get a new patrol position
+        if (distanceToApex < 100 && state == UnitState.idle && velocity.length < 1.0) {
+          targetPosition = _getApexPatrolPosition(apexPosition);
+          state = UnitState.moving;
+          AppLogger.debug('Unit ${id} updating patrol position near apex');
+        }
+      }
     }
 
     // Skip combat if seeking ship for healing
@@ -449,50 +676,143 @@ class UnitModel {
       }
     }
 
-    if (!forceRedirect && targetEnemy != null && targetEnemy!.health > 0) {
-      double distance = position.distanceTo(targetEnemy!.position);
-      if (distance > combatEngagementRange) {
-        targetPosition = targetEnemy!.position.clone();
-        state = UnitState.moving;
-      }
-    } else if (forceRedirect) {
-      state = isSelected ? UnitState.selected : UnitState.moving;
-      forceRedirect = false;
-    }
-
     Vector2? moveTarget;
 
-    if (targetPosition != position) {
+    // Priority 1: Handle ship seeking movement (both auto and manual)
+    if (isSeekingShip && targetShipId != null) {
+      final targetShip = _findTargetShip();
+      if (targetShip != null) {
+        final boardingPosition = targetShip.getBoardingPosition();
+        if (boardingPosition != null) {
+          moveTarget = boardingPosition;
+          
+          // Check if close enough to board
+          final distanceToShip = position.distanceTo(boardingPosition);
+          if (distanceToShip <= radius + 10) {
+            // Board the ship
+            boardShip();
+            targetShip.boardUnit(id);
+            AppLogger.debug('Unit ${id} boarded ship ${targetShipId}');
+            return; // Skip other movement logic
+          }
+        } else {
+          // Ship can't provide boarding position, cancel seeking
+          isSeekingShip = false;
+          targetShipId = null;
+        }
+      } else {
+        // Target ship not found, cancel seeking
+        isSeekingShip = false;
+        targetShipId = null;
+      }
+    }
+
+    // Priority 2: Player-directed movement (forceRedirect or explicit targetPosition)
+    if (moveTarget == null && (forceRedirect || targetPosition != position)) {
       moveTarget = targetPosition;
+      
+      // Check arrival at player-directed target
       double distToTarget = position.distanceTo(targetPosition);
       if (distToTarget < radius * 2) {
         velocity = Vector2.zero();
         state = UnitState.idle;
+        if (forceRedirect) {
+          forceRedirect = false; // Clear redirect flag
+        }
         return;
       }
-    } else if (apex != null && !(type == UnitType.captain && hasPlantedFlag)) {
-      moveTarget = Vector2(apex.dx, apex.dy);
+      
+      // Clear forceRedirect after setting target
+      if (forceRedirect) {
+        state = isSelected ? UnitState.selected : UnitState.moving;
+        forceRedirect = false;
+      }
+    }
+
+    // Priority 3: Combat movement (chase enemies)
+    if (moveTarget == null && targetEnemy != null && targetEnemy!.health > 0) {
+      double distance = position.distanceTo(targetEnemy!.position);
+      if (distance > combatEngagementRange) {
+        moveTarget = targetEnemy!.position.clone();
+        state = UnitState.moving;
+      }
+    }
+
+    // Priority 4: Default apex behavior (only if no other targets)
+    if (moveTarget == null && apex != null && !(type == UnitType.captain && hasPlantedFlag)) {
+      // Only move toward apex if not too close and not crowded
+      final apexPosition = Vector2(apex.dx, apex.dy);
+      final distanceToApex = position.distanceTo(apexPosition);
+      
+      // Different behavior for captains vs other units
+      if (type == UnitType.captain) {
+        // Captains need to reach the apex for flag raising
+        moveTarget = apexPosition;
+      } else {
+        // Other units should patrol around the apex area, not crowd it
+        final apexPatrolRadius = 80.0; // Stay within this distance of apex
+        final apexAvoidRadius = 30.0;  // Don't get closer than this
+        
+        if (distanceToApex > apexPatrolRadius) {
+          // Too far from apex, move closer
+          moveTarget = apexPosition;
+        } else if (distanceToApex < apexAvoidRadius) {
+          // Too close to apex, move to patrol position
+          moveTarget = _getApexPatrolPosition(apexPosition);
+        } else {
+          // In patrol zone, find a good patrol position
+          moveTarget = _getApexPatrolPosition(apexPosition);
+        }
+      }
     }
 
     if (moveTarget != null && state != UnitState.raisingFlag && !isInCombat) {
       Vector2 toTarget = moveTarget - position;
       double distToTarget = toTarget.length;
 
-      if (distToTarget > radius) {
+      // Better arrival detection - consider terrain and unit crowding
+      final arrivalRadius = _calculateArrivalRadius(moveTarget, apex);
+      
+      if (distToTarget <= arrivalRadius) {
+        // Arrived at target, stop moving
+        velocity = Vector2.zero();
+        state = UnitState.idle;
+        
+        // For non-captain units at apex, set a patrol target
+        if (apex != null && type != UnitType.captain) {
+          final apexPosition = Vector2(apex.dx, apex.dy);
+          if (moveTarget.distanceTo(apexPosition) < 50) {
+            // Was moving to apex area, now patrol around it
+            targetPosition = _getApexPatrolPosition(apexPosition);
+          }
+        }
+      } else if (distToTarget > radius) {
+        // Calculate base movement toward target
         toTarget.normalize();
+        
+        // Add wandering for natural movement
         _wanderAngle += (math.Random().nextDouble() - 0.5) * 0.3;
         double wanderX = math.cos(_wanderAngle) * 0.3;
         double wanderY = math.sin(_wanderAngle) * 0.3;
         toTarget.x += wanderX;
         toTarget.y += wanderY;
         toTarget.normalize();
+        
+        // Set base velocity
         velocity = toTarget.scaled(maxSpeed);
       }
     }
 
-    if (state != UnitState.raisingFlag && !isInCombat) {
+    // Apply flocking behaviors (separation, alignment, cohesion) for formation
+    if (state != UnitState.raisingFlag && !isInCombat && !isSeekingShip) {
       Vector2 separation = _calculateSeparation(units);
-      applyForce(separation);
+      Vector2 alignment = _calculateAlignment(units);
+      Vector2 cohesion = _calculateCohesion(units);
+      
+      // Apply flocking forces with appropriate weights
+      applyForce(separation * 2.0);  // Strong separation to avoid crowding
+      applyForce(alignment * 0.5);   // Moderate alignment for formation
+      applyForce(cohesion * 0.3);    // Light cohesion to stay together
     }
 
     if (velocity.length > maxSpeed) {
@@ -513,10 +833,17 @@ class UnitModel {
       position = newPosition;
       velocity = velocity * 0.5;
 
-      if (apex != null) {
+      // Only pull toward apex if it's a captain or unit is very far from land
+      if (apex != null && (type == UnitType.captain || position.distanceTo(Vector2(apex.dx, apex.dy)) > 100)) {
         Vector2 toApex = Vector2(apex.dx, apex.dy) - position;
-        toApex.normalize();
-        velocity += toApex.scaled(maxSpeed * 0.8);
+        final distanceToApex = toApex.length;
+        
+        // Reduce apex pull strength based on distance and unit type
+        if (distanceToApex > 0) {
+          toApex.normalize();
+          final pullStrength = type == UnitType.captain ? 0.8 : 0.3;
+          velocity += toApex.scaled(maxSpeed * pullStrength);
+        }
       }
     }
 
@@ -558,5 +885,56 @@ class UnitModel {
     }
 
     return steer;
+  }
+
+  /// Convert UnitModel to JSON for Firebase sync
+  Map<String, dynamic> toJson() {
+    return {
+      'unitId': id,
+      'playerId': playerId,
+      'type': type.name,
+      'state': state.name,
+      'x': position.x,
+      'y': position.y,
+      'targetX': targetPosition.x,
+      'targetY': targetPosition.y,
+      'health': health,
+      'maxHealth': maxHealth,
+      'isSelected': isSelected,
+      'team': color == Colors.blue ? 'blue' : 'red',
+    };
+  }
+
+  /// Create UnitModel from JSON data
+  static UnitModel fromJson(Map<String, dynamic> json) {
+    final unitType = UnitType.values.firstWhere(
+      (e) => e.name == json['type'],
+      orElse: () => UnitType.swordsman,
+    );
+    
+    final unitState = UnitState.values.firstWhere(
+      (e) => e.name == json['state'],
+      orElse: () => UnitState.idle,
+    );
+    
+    final team = json['team'] == 'blue' ? Team.blue : Team.red;
+    
+    return UnitModel(
+      id: json['unitId'] ?? '',
+      playerId: json['playerId'] ?? '',
+      type: unitType,
+      position: Vector2(
+        (json['x'] as num?)?.toDouble() ?? 0.0,
+        (json['y'] as num?)?.toDouble() ?? 0.0,
+      ),
+      getAllShipsCallback: null, // Will need to be set separately
+    )
+      ..state = unitState
+      ..targetPosition = Vector2(
+        (json['targetX'] as num?)?.toDouble() ?? 0.0,
+        (json['targetY'] as num?)?.toDouble() ?? 0.0,
+      )
+      ..health = (json['health'] as num?)?.toDouble() ?? 100.0
+      ..isSelected = json['isSelected'] ?? false;
   }
 }

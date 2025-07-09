@@ -589,7 +589,7 @@ class IslandGame extends FlameGame
     return false;
   }
 
-  void spawnUnitAtPosition(UnitType unitType, Team team, Vector2 position) {
+  UnitComponent? spawnUnitAtPosition(UnitType unitType, Team team, Vector2 position) {
     final playerId = team == Team.blue ? 'blue' : 'red';
     final player = players[playerId]!;
 
@@ -618,6 +618,7 @@ class IslandGame extends FlameGame
       playerId: playerId,
       isOnLandCallback: isOnLand,
       getTerrainSpeedCallback: getMovementSpeedMultiplier,
+      getAllShipsCallback: () => _ships,
     );
 
     final unitComponent = UnitComponent(model: unitModel);
@@ -631,6 +632,8 @@ class IslandGame extends FlameGame
     debugPrint(
         'Deployed ${unitType.name} for ${player.name} at $position from ship');
     _notifyUIUpdate();
+    
+    return unitComponent;
   }
 
   UnitComponent? _findUnitAtPosition(Vector2 worldPosition) {

@@ -2,15 +2,15 @@
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../utils/app_logger.dart';
+import '../models/unit_model.dart';
 
 class FirebaseRTDBService {
   FirebaseRTDBService._();
   static final FirebaseRTDBService instance = FirebaseRTDBService._();
 
-  final _log = Logger();
   final List<int> _rttSamples = [];
   late String _gameCode;
   String? _deviceId;
@@ -63,7 +63,7 @@ class FirebaseRTDBService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       deviceId = '${uuid.substring(0, 8)}-$timestamp';
       await prefs.setString('device_id', deviceId);
-      _log.i('🆆 Generated new device ID: ${deviceId.substring(0, 12)}...');
+      AppLogger.info('🆆 Generated new device ID: ${deviceId.substring(0, 12)}...');
     }
 
     _deviceId = deviceId;
@@ -76,7 +76,7 @@ class FirebaseRTDBService {
 
     // Ensure we have a device ID
     await _getDeviceId();
-    _log.i(
+    AppLogger.info(
         '🔧 Initializing RTDB with device ID: ${_deviceId?.substring(0, 8)}...');
 
     // Clear processed commands when reinitializing
@@ -97,24 +97,24 @@ class FirebaseRTDBService {
       _connectionSubscription = _db.ref('.info/connected').onValue.listen(
         (event) {
           final connected = event.snapshot.value as bool? ?? false;
-          _log.i(
+          AppLogger.info(
               '🔌 RTDB Connection: ${connected ? "Connected" : "Disconnected"} (initialized: $_initialized)');
 
           if (connected) {
             if (!_initialized) {
               _initialized = true;
-              _log.i('🎉 First connection established - sending join command');
+              AppLogger.info('🎉 First connection established - sending join command');
               // Send join command when connected
               sendCommand('join', {
                 'device_id': _deviceId,
                 'timestamp': DateTime.now().toIso8601String(),
               });
             } else {
-              _log.i('🔄 Reconnected to RTDB');
+              AppLogger.info('🔄 Reconnected to RTDB');
             }
           } else {
             if (_initialized) {
-              _log.w('⚠️ Lost RTDB connection');
+              AppLogger.warning('⚠️ Lost RTDB connection');
             }
           }
         },
@@ -130,13 +130,13 @@ class FirebaseRTDBService {
           _handleCommand(event.snapshot);
         },
         onError: (error) {
-          _log.e('❌ Command subscription error: $error');
+          AppLogger.error('❌ Command subscription error: $error');
         },
       );
 
-      _log.i('✅ RTDB initialized for game $_gameCode');
+      AppLogger.info('✅ RTDB initialized for game $_gameCode');
     } catch (e) {
-      _log.e('❌ Failed to initialize RTDB: $e');
+      AppLogger.error('❌ Failed to initialize RTDB: $e');
       _initialized = false;
       rethrow;
     }
@@ -197,7 +197,7 @@ class FirebaseRTDBService {
           _rttSamples.removeAt(0); // Keep last 10 samples
         }
 
-        _log.i(
+        AppLogger.info(
             '🏓 Pong received, RTT = ${rtt}ms (avg: ${avgRtt.toStringAsFixed(1)}ms)');
       } else if (senderId != _deviceId) {
         // Forward other commands to the stream (skip our own commands)
@@ -209,18 +209,18 @@ class FirebaseRTDBService {
           'timestamp': command['timestamp'],
         });
 
-        _log.i(
+        AppLogger.info(
             '📥 Command received: $type from ${senderId.substring(0, 8)}...');
       }
     } catch (e) {
-      _log.e('❌ Error handling command: $e');
+      AppLogger.error('❌ Error handling command: $e');
     }
   }
 
   /// Send a command (optimized for low latency)
   Future<void> sendCommand(String type, Map<String, dynamic> payload) async {
     if (!_initialized || _gameRef == null) {
-      _log.w('⚠️ Cannot send command - not initialized');
+      AppLogger.warning('⚠️ Cannot send command - not initialized');
       return;
     }
 
@@ -245,9 +245,9 @@ class FirebaseRTDBService {
       final commandRef = _gameRef!.child('cmd').child(now.toString());
       await commandRef.set(command);
 
-      _log.i('📤 Sent command: $type');
+      AppLogger.info('📤 Sent command: $type');
     } catch (e) {
-      _log.e('❌ Failed to send command "$type": $e');
+      AppLogger.error('❌ Failed to send command "$type": $e');
     }
   }
 
@@ -256,9 +256,108 @@ class FirebaseRTDBService {
     await sendCommand('ping', {});
   }
 
+  /// Sync complete game state to Firebase RTDB
+  Future<void> syncGameState({
+    required List<Map<String, dynamic>> units,
+    required List<Map<String, dynamic>> shipPositions,
+    required String gamePhase,
+  }) async {
+    try {
+      final gameState = {
+        'units': units,
+        'ships': shipPositions,
+        'phase': gamePhase,
+        'timestamp': ServerValue.timestamp,
+        'synced_by': _deviceId,
+      };
+
+      await _db.ref('games/$_gameCode/state').set(gameState);
+      AppLogger.multiplayer('Game state synced to RTDB');
+    } catch (e) {
+      AppLogger.error('Failed to sync game state', e);
+    }
+  }
+
+  /// Sync critical state changes only
+  Future<void> syncCriticalState(Map<String, dynamic> criticalState) async {
+    try {
+      final stateUpdate = {
+        ...criticalState,
+        'timestamp': ServerValue.timestamp,
+        'synced_by': _deviceId,
+      };
+
+      await _db.ref('games/$_gameCode/critical_state').set(stateUpdate);
+      AppLogger.multiplayer('Critical state synced to RTDB');
+    } catch (e) {
+      AppLogger.error('Failed to sync critical state', e);
+    }
+  }
+
+  /// Safely convert Firebase data to Map<String, dynamic>
+  Map<String, dynamic> _convertToStringDynamicMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    } else if (data is Map) {
+      final result = <String, dynamic>{};
+      data.forEach((key, value) {
+        final stringKey = key.toString();
+        if (value is Map) {
+          result[stringKey] = _convertToStringDynamicMap(value);
+        } else if (value is List) {
+          result[stringKey] = value.map((item) => 
+            item is Map ? _convertToStringDynamicMap(item) : item).toList();
+        } else {
+          result[stringKey] = value;
+        }
+      });
+      return result;
+    }
+    return <String, dynamic>{'data': data};
+  }
+
+  /// Get current game state from Firebase RTDB
+  Future<Map<String, dynamic>?> getGameState() async {
+    try {
+      final snapshot = await _db.ref('games/$_gameCode/state').get();
+      if (snapshot.exists) {
+        final data = snapshot.value;
+        return _convertToStringDynamicMap(data);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error('Failed to get game state', e);
+      return null;
+    }
+  }
+
+  /// Listen for game state changes
+  Stream<Map<String, dynamic>> watchGameState() {
+    return _db.ref('games/$_gameCode/state').onValue.map((event) {
+      if (event.snapshot.exists) {
+        final data = event.snapshot.value;
+        return _convertToStringDynamicMap(data);
+      }
+      return <String, dynamic>{};
+    });
+  }
+
+  /// Request game state sync from other player
+  Future<void> requestGameStateSync() async {
+    try {
+      await sendCommand('request_sync', {
+        'requester': _deviceId,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      AppLogger.multiplayer('Requested game state sync');
+    } catch (e) {
+      AppLogger.error('Failed to request game state sync', e);
+    }
+  }
+
   /// Clean up resources
   Future<void> dispose() async {
-    _log.i('🔌 Disposing RTDB service...');
+    AppLogger.info('🔌 Disposing RTDB service...');
 
     // Send leave command if connected
     if (_initialized) {
@@ -268,7 +367,7 @@ class FirebaseRTDBService {
           'timestamp': DateTime.now().toIso8601String(),
         });
       } catch (e) {
-        _log.e('Error sending leave command: $e');
+        AppLogger.error('Error sending leave command: $e');
       }
     }
 
@@ -289,7 +388,7 @@ class FirebaseRTDBService {
     _processedCommands.clear();
     _rttSamples.clear();
 
-    _log.i('👋 RTDB service disposed');
+    AppLogger.info('👋 RTDB service disposed');
   }
 
   /// Get database reference for direct access (testing)

@@ -29,6 +29,8 @@ abstract class GameCommand {
         return UnitSpawnCommand.fromJson(json);
       case 'unit_attack':
         return UnitAttackCommand.fromJson(json);
+      case 'unit_death':
+        return UnitDeathCommand.fromJson(json);
       case 'ship_move':
         return ShipMoveCommand.fromJson(json);
       case 'ship_deploy':
@@ -349,6 +351,44 @@ class FlagRaiseCommand extends GameCommand {
         (apexPos['x'] as num).toDouble(),
         (apexPos['y'] as num).toDouble(),
       ),
+    );
+  }
+}
+
+/// Command for unit death notification
+class UnitDeathCommand extends GameCommand {
+  final String unitId;
+  final String reason;
+
+  UnitDeathCommand({
+    required String commandId,
+    required String playerId,
+    required this.unitId,
+    this.reason = 'combat',
+  }) : super(
+          commandId: commandId,
+          playerId: playerId,
+          commandType: 'unit_death',
+        );
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'commandId': commandId,
+      'playerId': playerId,
+      'commandType': commandType,
+      'timestamp': timestamp.millisecondsSinceEpoch,
+      'unitId': unitId,
+      'reason': reason,
+    };
+  }
+
+  static UnitDeathCommand fromJson(Map<String, dynamic> json) {
+    return UnitDeathCommand(
+      commandId: json['commandId'],
+      playerId: json['playerId'],
+      unitId: json['unitId'],
+      reason: json['reason'] ?? 'combat',
     );
   }
 }

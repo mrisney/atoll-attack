@@ -11,6 +11,8 @@ import '../models/game_doc.dart';
 import '../models/unit_model.dart';
 import '../game/ship_component.dart';
 import '../services/webrtc_game_service.dart';
+import '../services/game_command_manager.dart';
+import '../utils/app_logger.dart';
 import '../widgets/ship_spawn_controls.dart';
 // import '../services/share_service.dart'; // TODO: Re-enable for multiplayer
 import '../services/rtdb_service.dart';
@@ -32,7 +34,7 @@ class GameScreen extends ConsumerStatefulWidget {
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends ConsumerState<GameScreen> {
+class _GameScreenState extends ConsumerState<GameScreen> with WidgetsBindingObserver {
   async.StreamSubscription<GameDoc>? _joinSub;
 
   async.Timer? _rttTimer;
@@ -46,8 +48,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   String? _joinedPlayerId;
 
   @override
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
     final code = widget.gameCode;
     if (code != null) {
       _persistGameCode(code);
@@ -77,6 +82,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // Handle app lifecycle changes for game sync
+    try {
+      final commandManager = GameCommandManager.instance;
+      switch (state) {
+        case AppLifecycleState.resumed:
+          commandManager.handleAppLifecycleChange('resumed');
+          break;
+        case AppLifecycleState.paused:
+          commandManager.handleAppLifecycleChange('paused');
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      // GameCommandManager not initialized yet, just log
+      AppLogger.debug('GameCommandManager not ready for lifecycle: $state');
+    }
+  }
 
 
   void _showStatus(String msg, Color c) {
@@ -105,6 +132,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _rttTimer?.cancel();
     _joinSub?.cancel();
     FirebaseRTDBService.instance.dispose();
@@ -460,8 +488,60 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         setState(() {});
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('🏠 Hosting room: $roomCode')),
+          SnackBar(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.home, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  'Room Created: $roomCode',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
         );
+
+        // Show a second toast with just the room code for easy sharing
+        Future.delayed(const Duration(milliseconds: 500), () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.share, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Share Code: $roomCode',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.blue,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+            ),
+          );
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -481,7 +561,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            hintText: 'Enter room code',
+            hintText: 'Enter 2-digit room code',
             border: OutlineInputBorder(),
           ),
           textCapitalization: TextCapitalization.characters,
@@ -513,7 +593,29 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           setState(() {});
           
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('🚪 Joined room: $roomCode')),
+            SnackBar(
+              content: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.login, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Joined Room: $roomCode',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              margin: const EdgeInsets.all(16),
+            ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(

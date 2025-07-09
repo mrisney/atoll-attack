@@ -10,14 +10,11 @@ import 'package:firebase_database/firebase_database.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
-import 'package:logger/logger.dart';
 
 import 'screens/game_screen.dart';
-import 'screens/test_menu_screen.dart';
-import 'constants/game_config.dart';
 import 'firebase_options.dart';
+import 'utils/app_logger.dart';
 
-final logger = Logger();
 final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
@@ -33,13 +30,13 @@ Future<void> main() async {
   db.setPersistenceEnabled(true);
   db.setPersistenceCacheSizeBytes(5000000); // 5MB cache
   
-  logger.i("🔥 Firebase initialized successfully with optimizations");
+  AppLogger.info("🔥 Firebase initialized successfully with optimizations");
 
   // 3) Force same game code for all devices
   final prefs = await SharedPreferences.getInstance();
   const lastCode = 'TEST-ROOM';
   await prefs.setString('lastGameCode', lastCode);
-  logger.i('🎮 Using game code: $lastCode');
+  AppLogger.game('Using game code: $lastCode');
 
   runApp(
     ProviderScope(
@@ -67,12 +64,12 @@ class _AtollAttackAppState extends State<AtollAttackApp> {
       (uri) {
         if (uri != null) _handleDeepLink(uri);
       },
-      onError: (err) => logger.e('Deep link error: $err'),
+      onError: (err) => AppLogger.error('Deep link error: $err'),
     );
   }
 
   void _handleDeepLink(Uri uri) {
-    logger.i('Deep link received: $uri');
+    AppLogger.info('Deep link received: $uri');
     String? code;
     if (uri.scheme == 'https' &&
         uri.host == 'link.atoll-attack.com' &&
@@ -100,7 +97,7 @@ class _AtollAttackAppState extends State<AtollAttackApp> {
       title: 'Atoll Attack',
       navigatorKey: navigatorKey,
       theme: ThemeData.dark(),
-      home: const TestMenuScreen(), // Use test menu for easy access
+      home: const GameScreen(), // Main game screen
     );
   }
 }

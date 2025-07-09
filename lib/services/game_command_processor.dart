@@ -7,6 +7,8 @@ import '../models/unit_model.dart';
 import '../game/island_game.dart';
 import '../game/unit_component.dart';
 import '../game/ship_component.dart';
+import '../utils/app_logger.dart';
+import 'game_state_sync_service.dart';
 
 final _log = Logger();
 
@@ -46,6 +48,9 @@ class GameCommandProcessor {
           break;
         case 'unit_attack':
           success = await _processUnitAttackCommand(command as UnitAttackCommand);
+          break;
+        case 'unit_death':
+          success = await _processUnitDeathCommand(command);
           break;
         case 'ship_move':
           success = await _processShipMoveCommand(command as ShipMoveCommand);
@@ -167,6 +172,29 @@ class GameCommandProcessor {
     game.spawnUnitAtPosition(command.unitType, team, worldSpawnPosition);
 
     return true;
+  }
+
+  /// Process unit death command
+  Future<bool> _processUnitDeathCommand(GameCommand command) async {
+    final deathCommand = command as UnitDeathCommand;
+    final unitId = deathCommand.unitId;
+    
+    if (unitId.isEmpty) {
+      AppLogger.error('Unit death command missing unitId');
+      return false;
+    }
+
+    final unit = _findUnitById(unitId);
+    if (unit != null) {
+      // Remove the unit from the game
+      unit.removeFromParent();
+      AppLogger.debug('Removed dead unit: $unitId');
+      return true;
+    } else {
+      // Unit already removed or doesn't exist
+      AppLogger.debug('Unit death command for already removed unit: $unitId');
+      return true; // Not an error, just already handled
+    }
   }
 
   /// Process unit attack command
@@ -332,7 +360,7 @@ class GameCommandProcessor {
     return true;
   }
 
-  /// Helper: Find unit by ID
+  /// Helper: Find unit by ID with fallback sync
   UnitComponent? _findUnitById(String unitId) {
     final units = game.getAllUnits();
     for (final unit in units) {
@@ -340,7 +368,38 @@ class GameCommandProcessor {
         return unit;
       }
     }
+    
+    // Unit not found - this could indicate desync
+    AppLogger.warning('Unit not found: $unitId - possible desync detected');
+    
+    // Report desync to sync service
+    try {
+      final syncService = GameStateSyncService.instance;
+      syncService.reportDesyncDetected('Unit not found: $unitId');
+    } catch (e) {
+      // Sync service might not be initialized yet
+      AppLogger.debug('Could not report desync to sync service: $e');
+    }
+    
     return null;
+  }
+
+  /// Send unit death command when a unit dies
+  Future<void> _sendUnitDeathCommand(String unitId, String playerId) async {
+    try {
+      final command = UnitDeathCommand(
+        commandId: 'death_${unitId}_${DateTime.now().millisecondsSinceEpoch}',
+        playerId: playerId,
+        unitId: unitId,
+        reason: 'combat',
+      );
+      
+      // We need to get the GameCommandManager instance to send the command
+      // For now, just log it - this method might not be used directly
+      AppLogger.debug('Unit death command created for: $unitId');
+    } catch (e) {
+      AppLogger.error('Failed to create unit death command', e);
+    }
   }
 
   /// Helper: Find multiple units by IDs

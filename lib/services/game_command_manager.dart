@@ -1,17 +1,16 @@
 // lib/services/game_command_manager.dart
 import 'package:flame/components.dart';
-import 'package:logger/logger.dart';
 import '../models/game_command.dart';
 import '../models/unit_model.dart';
 import '../services/webrtc_game_service.dart';
 import '../services/rtdb_service.dart';
 import '../services/game_command_processor.dart';
+import '../services/game_state_sync_service.dart';
 import '../game/island_game.dart';
 import '../game/unit_component.dart';
 import '../game/ship_component.dart';
-import 'dart:async';
-
-final _log = Logger();
+import '../utils/app_logger.dart';
+import 'dart:async' as async;
 
 /// Manages game commands using WebRTC (primary) + Firebase RTDB (fallback)
 /// Leverages existing optimized RTDB service for reliability
@@ -20,11 +19,37 @@ class GameCommandManager {
   final String localPlayerId;
   late final GameCommandProcessor _processor;
   
+  // Singleton pattern
+  static GameCommandManager? _instance;
+  static GameCommandManager get instance {
+    if (_instance == null) {
+      throw StateError('GameCommandManager not initialized. Call initialize() first.');
+    }
+    return _instance!;
+  }
+  
+  static void initializeManager(IslandGame game, String playerId) {
+    _instance = GameCommandManager._(game, playerId);
+  }
+  
+  // Private constructor
+  GameCommandManager._(this.game, this.localPlayerId) {
+    _processor = GameCommandProcessor(game);
+    _setupWebRTCListener();
+    _setupRTDBListener();
+    _startPeriodicSync();
+    _startWebRTCHealthMonitoring();
+    AppLogger.game('GameCommandManager initialized for player: $localPlayerId');
+  }
+  
   // Services
   final FirebaseRTDBService _rtdbService = FirebaseRTDBService.instance;
   
   // Subscriptions
-  StreamSubscription? _rtdbSubscription;
+  async.StreamSubscription? _rtdbSubscription;
+  async.Timer? _periodicSyncTimer;
+  async.Timer? _webrtcHealthTimer;
+  bool _webrtcHealthy = true;
   
   // Command ID generation
   int _commandCounter = 0;
@@ -48,7 +73,17 @@ class GameCommandManager {
       _setupRTDBListener();
     } catch (e) {
       print('💥 DEBUG: RTDB initialization failed: $e');
-      _log.e('💥 RTDB initialization failed: $e');
+      AppLogger.error('RTDB initialization failed', e);
+    }
+    
+    // Initialize GameStateSyncService
+    try {
+      GameStateSyncService.initialize(game, localPlayerId);
+      await GameStateSyncService.instance.initializeWithRoom(roomCode);
+      print('🔄 DEBUG: GameStateSyncService initialized');
+    } catch (e) {
+      print('💥 DEBUG: GameStateSyncService initialization failed: $e');
+      AppLogger.error('GameStateSyncService initialization failed', e);
     }
     
     // Set up WebRTC listener
@@ -61,22 +96,21 @@ class GameCommandManager {
   void _setupWebRTCListener() {
     final webrtcService = WebRTCGameService.instance;
     
-    webrtcService.onGameCommandReceived = (Map<String, dynamic> commandData) {
+    webrtcService.onGameCommand = (Map<String, dynamic> commandData) {
       try {
-        print('📡 DEBUG: WebRTC command received: ${commandData['commandType']}');
+        AppLogger.webrtc('WebRTC command received: ${commandData['commandType']}');
         final command = GameCommand.fromJson(commandData);
         
         // Don't process our own commands
         if (command.playerId == localPlayerId) {
-          print('🔄 DEBUG: Ignoring own WebRTC command');
+          AppLogger.debug('Ignoring own WebRTC command');
           return;
         }
         
-        print('✅ DEBUG: Processing WebRTC command: ${command.commandType}');
+        AppLogger.debug('Processing WebRTC command: ${command.commandType}');
         _processor.processCommand(command);
       } catch (e) {
-        print('💥 DEBUG: Error processing WebRTC command: $e');
-        _log.e('💥 Error processing WebRTC command: $e');
+        AppLogger.error('Error processing WebRTC command', e);
       }
     };
     
@@ -89,30 +123,61 @@ class GameCommandManager {
       try {
         // Convert RTDB command format to GameCommand
         final commandType = rtdbCommand['type'] as String;
-        final payload = rtdbCommand['payload'] as Map<String, dynamic>;
+        final rawPayload = rtdbCommand['payload'];
         final senderId = rtdbCommand['sender_id'] as String;
         
-        print('🔥 DEBUG: RTDB command received: $commandType from $senderId');
+        // Safely convert payload to Map<String, dynamic>
+        final payload = _convertToStringDynamicMap(rawPayload);
+        
+        AppLogger.multiplayer('RTDB command received: $commandType from $senderId');
         
         // Skip non-game commands
+        // Handle sync requests
+        if (commandType == 'request_sync') {
+          AppLogger.multiplayer('Received sync request from $senderId');
+          // TODO: Implement sync when architecture is ready
+          return;
+        }
+        
         if (!_isGameCommand(commandType)) {
-          print('🔄 DEBUG: Skipping non-game command: $commandType');
+          AppLogger.debug('Skipping non-game command: $commandType');
           return;
         }
         
         // Convert to GameCommand format
         final gameCommand = _convertRTDBToGameCommand(commandType, payload, senderId);
         if (gameCommand != null) {
-          print('✅ DEBUG: Processing RTDB command: ${gameCommand.commandType}');
+          AppLogger.debug('Processing RTDB command: ${gameCommand.commandType}');
           _processor.processCommand(gameCommand);
         }
       } catch (e) {
-        print('💥 DEBUG: Error processing RTDB command: $e');
-        _log.e('💥 Error processing RTDB command: $e');
+        AppLogger.error('Error processing RTDB command', e);
       }
     });
     
-    print('🔥 DEBUG: RTDB listener configured');
+    AppLogger.multiplayer('RTDB listener configured');
+  }
+
+  /// Safely convert Firebase data to Map<String, dynamic>
+  Map<String, dynamic> _convertToStringDynamicMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    } else if (data is Map) {
+      final result = <String, dynamic>{};
+      data.forEach((key, value) {
+        final stringKey = key.toString();
+        if (value is Map) {
+          result[stringKey] = _convertToStringDynamicMap(value);
+        } else if (value is List) {
+          result[stringKey] = value.map((item) => 
+            item is Map ? _convertToStringDynamicMap(item) : item).toList();
+        } else {
+          result[stringKey] = value;
+        }
+      });
+      return result;
+    }
+    return <String, dynamic>{'data': data};
   }
 
   /// Check if this is a game command (not ping/pong/join/leave)
@@ -172,7 +237,7 @@ class GameCommandManager {
       print('🔥 DEBUG: Command sent via RTDB');
     } catch (e) {
       print('💥 DEBUG: RTDB send failed: $e');
-      _log.e('💥 RTDB send failed: $e');
+      AppLogger.error('RTDB send failed', e);
     }
     
     if (!sentViaWebRTC) {
@@ -334,6 +399,121 @@ class GameCommandManager {
     await _sendCommand(command);
   }
 
+  /// Handle app lifecycle changes for sync
+  void handleAppLifecycleChange(String state) {
+    if (state == 'resumed') {
+      AppLogger.game('App resumed, requesting game state sync');
+      _requestGameStateSync();
+    } else if (state == 'paused') {
+      AppLogger.game('App paused, syncing current game state');
+      _syncCurrentGameState();
+    }
+  }
+
+  /// Request game state synchronization
+  Future<void> _requestGameStateSync() async {
+    try {
+      await _rtdbService.requestGameStateSync();
+      
+      // Wait a moment then get the latest state
+      await Future.delayed(const Duration(milliseconds: 500));
+      final gameState = await _rtdbService.getGameState();
+      
+      if (gameState != null) {
+        await _applyGameState(gameState);
+      }
+    } catch (e) {
+      AppLogger.error('Failed to request game state sync', e);
+    }
+  }
+
+  /// Sync current game state to RTDB
+  Future<void> _syncCurrentGameState() async {
+    try {
+      // For now, just sync a basic state indicator
+      // TODO: Implement full unit/ship sync when component APIs are stable
+      final basicState = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'player': localPlayerId,
+        'status': 'active',
+      };
+      
+      await _rtdbService.syncGameState(
+        units: [], // TODO: Extract units when component API is ready
+        shipPositions: [], // TODO: Extract ships when component API is ready
+        gamePhase: 'active',
+      );
+      
+      AppLogger.game('Basic game state synced');
+    } catch (e) {
+      AppLogger.error('Failed to sync current game state', e);
+    }
+  }
+
+  /// Apply synced game state to the current game
+  Future<void> _applyGameState(Map<String, dynamic> gameState) async {
+    try {
+      AppLogger.game('Applying synced game state');
+      
+      // For now, just log the sync - full implementation when component APIs are ready
+      final timestamp = gameState['timestamp'];
+      AppLogger.game('Received game state from timestamp: $timestamp');
+      
+      // TODO: Implement full unit/ship sync when component APIs are stable
+      
+      AppLogger.game('Game state sync completed');
+    } catch (e) {
+      AppLogger.error('Failed to apply game state', e);
+    }
+  }
+
+  /// Start periodic game state sync (every 30 seconds)
+  void _startPeriodicSync() {
+    _periodicSyncTimer = async.Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_webrtcHealthy) {
+        // WebRTC is healthy, just sync to RTDB as backup
+        _syncCurrentGameState();
+      } else {
+        // WebRTC is unhealthy, request full sync via RTDB
+        AppLogger.warning('WebRTC unhealthy, requesting full sync via RTDB');
+        _requestGameStateSync();
+      }
+    });
+  }
+
+  /// Monitor WebRTC health and fallback to RTDB when needed
+  void _startWebRTCHealthMonitoring() {
+    _webrtcHealthTimer = async.Timer.periodic(const Duration(seconds: 10), (timer) {
+      final webrtcService = WebRTCGameService.instance;
+      final wasHealthy = _webrtcHealthy;
+      _webrtcHealthy = webrtcService.isConnected;
+      
+      if (wasHealthy && !_webrtcHealthy) {
+        AppLogger.warning('WebRTC connection lost, falling back to RTDB');
+        _requestGameStateSync();
+      } else if (!wasHealthy && _webrtcHealthy) {
+        AppLogger.info('WebRTC connection restored');
+        _syncCurrentGameState();
+      }
+    });
+  }
+
+  /// Cleanup resources
+  void dispose() {
+    _rtdbSubscription?.cancel();
+    _periodicSyncTimer?.cancel();
+    _webrtcHealthTimer?.cancel();
+    
+    // Dispose sync service
+    try {
+      GameStateSyncService.instance.dispose();
+    } catch (e) {
+      AppLogger.debug('GameStateSyncService already disposed: $e');
+    }
+    
+    AppLogger.game('GameCommandManager disposed');
+  }
+
   /// Get connection status for debugging
   Map<String, dynamic> get connectionStatus {
     final webrtcService = WebRTCGameService.instance;
@@ -347,17 +527,5 @@ class GameCommandManager {
         'latency': _rtdbService.averageLatency,
       },
     };
-  }
-
-  /// Clean up resources
-  void dispose() {
-    print('🧹 DEBUG: Disposing GameCommandManager');
-    
-    _rtdbSubscription?.cancel();
-    _processor.clearProcessedCommandsCache();
-    
-    // Note: Don't dispose RTDB service as it's a singleton that might be used elsewhere
-    
-    print('🧹 DEBUG: GameCommandManager disposed');
   }
 }

@@ -75,6 +75,7 @@ class UnitSnapshot {
   UnitModel toModel({
     required bool Function(Vector2)? isOnLandCallback,
     required double Function(Vector2)? getTerrainSpeedCallback,
+    List<dynamic> Function()? getAllShipsCallback,
   }) {
     final model = UnitModel(
       id: id,
@@ -88,6 +89,7 @@ class UnitSnapshot {
       isTargeted: isTargeted,
       isOnLandCallback: isOnLandCallback,
       getTerrainSpeedCallback: getTerrainSpeedCallback,
+      getAllShipsCallback: getAllShipsCallback,
     );
 
     // Restore combat state
