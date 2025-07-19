@@ -56,7 +56,7 @@ class IslandGame extends FlameGame
 
   // Game state
   bool _victoryAchieved = false;
-  bool useAssets = false;
+  bool useAssets = true; // Enable asset loading
   GameState _currentGameState = GameState();
   double _lastRulesUpdate = 0.0;
   ShipComponent? _activeSpawnShip; // Currently selected ship for spawn controls

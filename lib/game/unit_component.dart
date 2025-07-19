@@ -99,39 +99,72 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
       add(_progressBarComponent!);
     }
 
-    // This will be implemented when artwork is available
-    if (gameRef.useAssets) {
+    // Load sprite assets - always try to load for swordsman units
+    if (gameRef.useAssets || model.type == UnitType.swordsman) {
       await _loadAssets();
     }
   }
 
   Future<void> _loadAssets() async {
-    // Placeholder for future asset loading
-    // Will be implemented when artwork is available
-    final String unitPath = 'units/${model.team.name}_${model.type.name}';
-
     try {
-      // Load static sprite
-      unitSprite = await Sprite.load('$unitPath/idle.png');
-
-      // Load animations
-      walkAnimation = await SpriteAnimation.load(
-        '$unitPath/walk.png',
-        SpriteAnimationData.sequenced(
-          amount: 8,
-          stepTime: 0.1,
-          textureSize: Vector2(64, 64),
-        ),
-      );
-
-      attackAnimation = await SpriteAnimation.load(
-        '$unitPath/attack.png',
-        SpriteAnimationData.sequenced(
-          amount: 5,
-          stepTime: 0.1,
-          textureSize: Vector2(64, 64),
-        ),
-      );
+      // For swordsman units, use the pikeman sprite sheets
+      if (model.type == UnitType.swordsman) {
+        // Choose the appropriate size based on screen resolution
+        final bool useHighRes = gameRef.size.x > 800;
+        final String spriteSheetPath = useHighRes 
+            ? 'pikeman-walk-64.png'
+            : 'pikeman-walk 32.png';
+        
+        // Load the sprite sheet image
+        final spriteSheet = await gameRef.images.load(spriteSheetPath);
+        
+        // Define frame size based on the sprite sheet
+        final frameWidth = useHighRes ? 64 : 32;
+        final frameHeight = useHighRes ? 64 : 32;
+        final frameCount = 8; // Number of frames in the animation
+        
+        // Create the walk animation from the sprite sheet
+        walkAnimation = SpriteAnimation.fromFrameData(
+          spriteSheet,
+          SpriteAnimationData.sequenced(
+            amount: frameCount,
+            textureSize: Vector2(frameWidth.toDouble(), frameHeight.toDouble()),
+            stepTime: 0.1, // Time between frames
+          ),
+        );
+        
+        // Use the first frame as the static sprite
+        unitSprite = Sprite(
+          spriteSheet,
+          srcPosition: Vector2.zero(),
+          srcSize: Vector2(frameWidth.toDouble(), frameHeight.toDouble()),
+        );
+      } else {
+        // For other unit types, use the placeholder approach
+        final String unitPath = 'units/${model.team.name}_${model.type.name}';
+        
+        // Load static sprite
+        unitSprite = await Sprite.load('$unitPath/idle.png');
+        
+        // Load animations
+        walkAnimation = await SpriteAnimation.load(
+          '$unitPath/walk.png',
+          SpriteAnimationData.sequenced(
+            amount: 8,
+            stepTime: 0.1,
+            textureSize: Vector2(64, 64),
+          ),
+        );
+        
+        attackAnimation = await SpriteAnimation.load(
+          '$unitPath/attack.png',
+          SpriteAnimationData.sequenced(
+            amount: 5,
+            stepTime: 0.1,
+            textureSize: Vector2(64, 64),
+          ),
+        );
+      }
     } catch (e) {
       // Fallback to simple shapes if assets fail to load
       debugPrint('Failed to load assets for ${model.type}: $e');
@@ -258,16 +291,41 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   }
 
   void _renderWithAssets(Canvas canvas) {
-    // This will be implemented when artwork is available
+    // Save canvas state to apply team color tint
+    canvas.save();
+    
+    // Apply team color tint if needed
+    if (model.type == UnitType.swordsman) {
+      // For pikeman sprites, we'll use a color filter to tint them based on team
+      final Paint teamPaint = Paint();
+      final Color teamColor = model.team == Team.blue ? 
+          Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3);
+      
+      // Apply color blend to the canvas
+      canvas.saveLayer(Rect.fromLTWH(0, 0, size.x, size.y), teamPaint);
+    }
+    
+    // Render the appropriate animation or sprite
     if (model.state == UnitState.moving && walkAnimation != null) {
-      // Use direct sprite rendering instead of animation methods
-      unitSprite?.render(canvas, position: Vector2.zero(), size: size);
+      // Use the walk animation when moving
+      final currentFrame = walkAnimation!.getSprite();
+      currentFrame.render(canvas, position: Vector2.zero(), size: size);
+      walkAnimation!.update(0.016); // Update animation frame
     } else if (model.state == UnitState.attacking && attackAnimation != null) {
-      // Use direct sprite rendering instead of animation methods
-      unitSprite?.render(canvas, position: Vector2.zero(), size: size);
+      // Use attack animation when attacking
+      final currentFrame = attackAnimation!.getSprite();
+      currentFrame.render(canvas, position: Vector2.zero(), size: size);
+      attackAnimation!.update(0.016); // Update animation frame
     } else if (unitSprite != null) {
+      // Use static sprite for idle state
       unitSprite!.render(canvas, position: Vector2.zero(), size: size);
     }
+    
+    // Restore canvas state
+    if (model.type == UnitType.swordsman) {
+      canvas.restore(); // Restore from color blend
+    }
+    canvas.restore(); // Restore from initial save
   }
 
   void _renderSimpleShapes(Canvas canvas) {
