@@ -118,7 +118,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         // Load the sprite sheet image
         final spriteSheet = await gameRef.images.load(spriteSheetPath);
         
-        // Define frame size based on the sprite sheet
+        // Define frame size and layout based on the sprite sheet
         final frameWidth = useHighRes ? 64 : 32;
         final frameHeight = useHighRes ? 64 : 32;
         final frameCount = 8; // Number of frames in the animation
@@ -130,6 +130,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             amount: frameCount,
             textureSize: Vector2(frameWidth.toDouble(), frameHeight.toDouble()),
             stepTime: 0.1, // Time between frames
+            loop: true,
           ),
         );
         
@@ -143,27 +144,34 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         // For other unit types, use the placeholder approach
         final String unitPath = 'units/${model.team.name}_${model.type.name}';
         
-        // Load static sprite
-        unitSprite = await Sprite.load('$unitPath/idle.png');
-        
-        // Load animations
-        walkAnimation = await SpriteAnimation.load(
-          '$unitPath/walk.png',
-          SpriteAnimationData.sequenced(
-            amount: 8,
-            stepTime: 0.1,
-            textureSize: Vector2(64, 64),
-          ),
-        );
-        
-        attackAnimation = await SpriteAnimation.load(
-          '$unitPath/attack.png',
-          SpriteAnimationData.sequenced(
-            amount: 5,
-            stepTime: 0.1,
-            textureSize: Vector2(64, 64),
-          ),
-        );
+        try {
+          // Load static sprite
+          unitSprite = await Sprite.load('$unitPath/idle.png');
+          
+          // Load animations
+          walkAnimation = await SpriteAnimation.load(
+            '$unitPath/walk.png',
+            SpriteAnimationData.sequenced(
+              amount: 8,
+              stepTime: 0.1,
+              textureSize: Vector2(64, 64),
+              loop: true,
+            ),
+          );
+          
+          attackAnimation = await SpriteAnimation.load(
+            '$unitPath/attack.png',
+            SpriteAnimationData.sequenced(
+              amount: 5,
+              stepTime: 0.1,
+              textureSize: Vector2(64, 64),
+              loop: true,
+            ),
+          );
+        } catch (e) {
+          // Silently fail for placeholder assets
+          debugPrint('Placeholder assets not found for ${model.type}: $e');
+        }
       }
     } catch (e) {
       // Fallback to simple shapes if assets fail to load
@@ -308,14 +316,16 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     // Render the appropriate animation or sprite
     if (model.state == UnitState.moving && walkAnimation != null) {
       // Use the walk animation when moving
-      final currentFrame = walkAnimation!.getSprite();
-      currentFrame.render(canvas, position: Vector2.zero(), size: size);
-      walkAnimation!.update(0.016); // Update animation frame
+      final currentSprite = walkAnimation!.currentSprite;
+      currentSprite.render(canvas, position: Vector2.zero(), size: size);
+      // Manually update the animation
+      walkAnimation!.update(0.016);
     } else if (model.state == UnitState.attacking && attackAnimation != null) {
       // Use attack animation when attacking
-      final currentFrame = attackAnimation!.getSprite();
-      currentFrame.render(canvas, position: Vector2.zero(), size: size);
-      attackAnimation!.update(0.016); // Update animation frame
+      final currentSprite = attackAnimation!.currentSprite;
+      currentSprite.render(canvas, position: Vector2.zero(), size: size);
+      // Manually update the animation
+      attackAnimation!.update(0.016);
     } else if (unitSprite != null) {
       // Use static sprite for idle state
       unitSprite!.render(canvas, position: Vector2.zero(), size: size);
