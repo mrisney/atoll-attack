@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flame/components.dart';
+import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import '../models/unit_model.dart';
 import 'island_game.dart';
@@ -51,8 +52,9 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
 
   // Will be used when artwork is available
   Sprite? unitSprite;
-  SpriteAnimation? walkAnimation;
-  SpriteAnimation? attackAnimation;
+  SpriteAnimationComponent? walkAnimationComponent;
+  SpriteAnimationComponent? attackAnimationComponent;
+  double animationTime = 0.0;
 
   UnitComponent({required this.model})
       : super(
@@ -123,8 +125,8 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
         final frameHeight = useHighRes ? 64 : 32;
         final frameCount = 8; // Number of frames in the animation
         
-        // Create the walk animation from the sprite sheet
-        walkAnimation = SpriteAnimation.fromFrameData(
+        // Create the walk animation component
+        final walkAnimation = SpriteAnimation.fromFrameData(
           spriteSheet,
           SpriteAnimationData.sequenced(
             amount: frameCount,
@@ -132,6 +134,13 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             stepTime: 0.1, // Time between frames
             loop: true,
           ),
+        );
+        
+        // Create animation component
+        walkAnimationComponent = SpriteAnimationComponent(
+          animation: walkAnimation,
+          size: size,
+          position: Vector2.zero(),
         );
         
         // Use the first frame as the static sprite
@@ -149,7 +158,7 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
           unitSprite = await Sprite.load('$unitPath/idle.png');
           
           // Load animations
-          walkAnimation = await SpriteAnimation.load(
+          final walkAnim = await SpriteAnimation.load(
             '$unitPath/walk.png',
             SpriteAnimationData.sequenced(
               amount: 8,
@@ -159,7 +168,14 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
             ),
           );
           
-          attackAnimation = await SpriteAnimation.load(
+          // Create walk animation component
+          walkAnimationComponent = SpriteAnimationComponent(
+            animation: walkAnim,
+            size: size,
+            position: Vector2.zero(),
+          );
+          
+          final attackAnimation = await SpriteAnimation.load(
             '$unitPath/attack.png',
             SpriteAnimationData.sequenced(
               amount: 5,
@@ -167,6 +183,13 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
               textureSize: Vector2(64, 64),
               loop: true,
             ),
+          );
+          
+          // Create attack animation component
+          attackAnimationComponent = SpriteAnimationComponent(
+            animation: attackAnimation,
+            size: size,
+            position: Vector2.zero(),
           );
         } catch (e) {
           // Silently fail for placeholder assets
@@ -314,18 +337,12 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
     }
     
     // Render the appropriate animation or sprite
-    if (model.state == UnitState.moving && walkAnimation != null) {
-      // Use the walk animation when moving
-      final currentSprite = walkAnimation!.currentSprite;
-      currentSprite.render(canvas, position: Vector2.zero(), size: size);
-      // Manually update the animation
-      walkAnimation!.update(0.016);
-    } else if (model.state == UnitState.attacking && attackAnimation != null) {
-      // Use attack animation when attacking
-      final currentSprite = attackAnimation!.currentSprite;
-      currentSprite.render(canvas, position: Vector2.zero(), size: size);
-      // Manually update the animation
-      attackAnimation!.update(0.016);
+    if (model.state == UnitState.moving && walkAnimationComponent != null) {
+      // For animations, render the animation component
+      walkAnimationComponent!.render(canvas);
+    } else if (model.state == UnitState.attacking && attackAnimationComponent != null) {
+      // For attack animation, render the animation component
+      attackAnimationComponent!.render(canvas);
     } else if (unitSprite != null) {
       // Use static sprite for idle state
       unitSprite!.render(canvas, position: Vector2.zero(), size: size);
@@ -804,6 +821,15 @@ class UnitComponent extends PositionComponent with HasGameRef<IslandGame> {
   @override
   void update(double dt) {
     super.update(dt);
+    
+    // Update animations if they exist
+    if (walkAnimationComponent != null && model.state == UnitState.moving) {
+      walkAnimationComponent!.update(dt);
+    }
+    
+    if (attackAnimationComponent != null && model.state == UnitState.attacking) {
+      attackAnimationComponent!.update(dt);
+    }
 
     // Handle flag raising logic for captains
     if (model.type == UnitType.captain && _flagRaiseComponent != null) {
